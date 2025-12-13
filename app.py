@@ -260,11 +260,11 @@ with tab1:
         
         if saved_photo:
             # Immediate annotation options
-            st.markdown("### ✏️ Add Note or Draw")
+            st.markdown("### ✏️ Annotate Photo")
             
             # Add/Edit comment
             photo_comment = st.text_area(
-                "Add or edit comment:",
+                "Notes/Comments:",
                 value=saved_photo['comment'],
                 key="preview_comment",
                 placeholder="Enter a description or note for this photo..."
@@ -276,7 +276,7 @@ with tab1:
             
             # Quick annotation
             quick_annotation = st.text_input(
-                "Quick annotation:",
+                "Add text annotation:",
                 key="preview_annotation",
                 placeholder="Add a quick note (e.g., 'Left ventricle', 'Damaged area')"
             )
@@ -288,8 +288,8 @@ with tab1:
             
             st.divider()
             
-            # Drawing tools
-            st.markdown("### 🎨 Draw on Photo")
+            # Drawing tools (part of annotation)
+            st.markdown("#### 🎨 Annotate with Drawing Tools")
             
             col_mode, col_color, col_width = st.columns(3)
             with col_mode:
@@ -488,7 +488,7 @@ with tab2:
                     st.divider()
                     
                     # Drawing Annotation
-                    st.markdown("**🎨 Draw on Photo** (circles, arrows, highlights)")
+                    st.markdown("**🎨 Annotate with Drawing Tools**")
                     
                     # Drawing mode selector
                     drawing_mode = st.selectbox(
