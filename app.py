@@ -233,6 +233,9 @@ with tab1:
     
     if image_to_add is not None:
         image = Image.open(image_to_add)
+        # Convert image to RGB mode to ensure compatibility with Streamlit
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
         
         # Auto-save the photo when captured
         # Create a unique hash to detect new photos
