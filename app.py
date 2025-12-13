@@ -9,6 +9,7 @@ from PIL import Image
 import io
 from datetime import datetime
 from streamlit_drawable_canvas import st_canvas
+import hashlib
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -236,7 +237,7 @@ with tab1:
         # Auto-save the photo when captured
         # Create a unique hash to detect new photos
         image_bytes = image_to_add.getvalue()
-        current_photo_hash = hash(image_bytes)
+        current_photo_hash = hashlib.md5(image_bytes).hexdigest()
         
         # Only auto-save if this is a new photo (not already saved)
         if current_photo_hash != st.session_state.camera_photo_hash:
@@ -402,7 +403,7 @@ with tab2:
         st.write(f"**{len(photos_to_display)} photo(s) found**")
         
         # Drag and drop instructions
-        st.info("💡 **Tip**: Click on a photo for details. Use the 'Move' button to organize photos into different sessions.")
+        st.info("💡 **Tip**: Expand 'Quick Move' to reorganize photos between sessions. Expand 'Full Details & Actions' to annotate, draw, or manage photos.")
         
         # Display photos in a grid
         for session_name, photo in photos_to_display:
@@ -418,7 +419,7 @@ with tab2:
                 
                 with col1:
                     # Clickable photo preview
-                    st.image(photo['image'], use_container_width=True, caption=f"Click 'View Details' to annotate")
+                    st.image(photo['image'], use_container_width=True)
                 
                 with col2:
                     st.markdown(f"**Comment:**")
@@ -430,11 +431,6 @@ with tab2:
                     drawing_status = "Yes" if photo.get('drawing_data') else "No"
                     st.caption(f"📝 {annotation_count} annotation(s)")
                     st.caption(f"🎨 Drawing: {drawing_status}")
-                    
-                    # Quick action buttons
-                    if st.button(f"👁️ View Details", key=f"view_{photo['id']}", use_container_width=True):
-                        # This will expand the details section below
-                        pass
                 
                 # Move photo to different session - Quick access
                 with st.expander(f"📦 Move Photo {photo['id']} to Different Session", expanded=False):
