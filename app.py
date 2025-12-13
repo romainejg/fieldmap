@@ -9,6 +9,7 @@ from PIL import Image
 import io
 from datetime import datetime
 from streamlit_drawable_canvas import st_canvas
+import hashlib
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -208,6 +209,12 @@ with st.sidebar:
 # Main content area
 tab1, tab2 = st.tabs(["📷 Camera", "🖼️ Gallery"])
 
+# Initialize auto-save tracking
+if 'last_saved_photo_id' not in st.session_state:
+    st.session_state.last_saved_photo_id = None
+if 'camera_photo_hash' not in st.session_state:
+    st.session_state.camera_photo_hash = None
+
 # Camera Tab
 with tab1:
     st.header("Capture Photo")
@@ -226,23 +233,148 @@ with tab1:
     
     if image_to_add is not None:
         image = Image.open(image_to_add)
-        st.image(image, caption="Preview", use_container_width=True)
         
-        # Add comment
-        photo_comment = st.text_area("Add a comment (optional)", key="photo_comment")
+        # Auto-save the photo when captured
+        # Create a unique hash to detect new photos
+        image_bytes = image_to_add.getvalue()
+        current_photo_hash = hashlib.md5(image_bytes).hexdigest()
         
-        # Session selector for this photo
-        photo_session = st.selectbox(
-            "Add to session:",
-            options=list(st.session_state.sessions.keys()),
-            index=list(st.session_state.sessions.keys()).index(st.session_state.current_session),
-            key="photo_session_selector"
-        )
+        # Only auto-save if this is a new photo (not already saved)
+        if current_photo_hash != st.session_state.camera_photo_hash:
+            photo_id = add_photo_to_session(image, st.session_state.current_session, "")
+            st.session_state.last_saved_photo_id = photo_id
+            st.session_state.camera_photo_hash = current_photo_hash
+            st.success(f"✅ Photo automatically saved to '{st.session_state.current_session}' session! (ID: {photo_id})")
         
-        if st.button("💾 Save Photo", type="primary", use_container_width=True):
-            photo_id = add_photo_to_session(image, photo_session, photo_comment)
-            st.success(f"Photo saved to '{photo_session}' session! (ID: {photo_id})")
-            st.balloons()
+        # Show preview with annotation options
+        st.subheader("📸 Preview & Annotate")
+        st.image(image, caption="Photo Preview", use_container_width=True)
+        
+        # Get the saved photo data
+        saved_photo = None
+        if st.session_state.last_saved_photo_id:
+            for photo in st.session_state.sessions[st.session_state.current_session]:
+                if photo['id'] == st.session_state.last_saved_photo_id:
+                    saved_photo = photo
+                    break
+        
+        if saved_photo:
+            # Immediate annotation options
+            st.markdown("### ✏️ Add Note or Draw")
+            
+            # Add/Edit comment
+            photo_comment = st.text_area(
+                "Add or edit comment:",
+                value=saved_photo['comment'],
+                key="preview_comment",
+                placeholder="Enter a description or note for this photo..."
+            )
+            if st.button("💾 Update Comment", use_container_width=True):
+                update_photo_comment(saved_photo['id'], st.session_state.current_session, photo_comment)
+                st.success("Comment updated!")
+                st.rerun()
+            
+            # Quick annotation
+            quick_annotation = st.text_input(
+                "Quick annotation:",
+                key="preview_annotation",
+                placeholder="Add a quick note (e.g., 'Left ventricle', 'Damaged area')"
+            )
+            if st.button("➕ Add Annotation", use_container_width=True):
+                if quick_annotation:
+                    add_annotation_to_photo(saved_photo['id'], st.session_state.current_session, quick_annotation)
+                    st.success("Annotation added!")
+                    st.rerun()
+            
+            st.divider()
+            
+            # Drawing tools
+            st.markdown("### 🎨 Draw on Photo")
+            
+            col_mode, col_color, col_width = st.columns(3)
+            with col_mode:
+                drawing_mode = st.selectbox(
+                    "Tool:",
+                    options=["freedraw", "line", "rect", "circle"],
+                    format_func=lambda x: {
+                        "freedraw": "✏️ Draw",
+                        "line": "↗️ Arrow",
+                        "rect": "⬜ Box",
+                        "circle": "⭕ Circle"
+                    }[x],
+                    key="preview_drawing_mode"
+                )
+            with col_color:
+                stroke_color = st.color_picker(
+                    "Color:",
+                    value="#FF0000",
+                    key="preview_stroke_color"
+                )
+            with col_width:
+                stroke_width = st.slider(
+                    "Width:",
+                    min_value=1,
+                    max_value=20,
+                    value=3,
+                    key="preview_stroke_width"
+                )
+            
+            # Get image dimensions for canvas
+            img_width, img_height = image.size
+            max_canvas_width = 600
+            if img_width > max_canvas_width:
+                scale = max_canvas_width / img_width
+                canvas_width = max_canvas_width
+                canvas_height = int(img_height * scale)
+            else:
+                canvas_width = img_width
+                canvas_height = img_height
+            
+            # Create drawable canvas
+            canvas_result = st_canvas(
+                fill_color="rgba(255, 165, 0, 0.3)",
+                stroke_width=stroke_width,
+                stroke_color=stroke_color,
+                background_image=image,
+                update_streamlit=True,
+                height=canvas_height,
+                width=canvas_width,
+                drawing_mode=drawing_mode,
+                initial_drawing=saved_photo.get('drawing_data'),
+                key="preview_canvas"
+            )
+            
+            # Save drawing button
+            col_save, col_clear = st.columns(2)
+            with col_save:
+                if st.button("💾 Save Drawing", key="preview_save_drawing", use_container_width=True):
+                    if canvas_result is not None and canvas_result.json_data is not None:
+                        update_photo_drawing(saved_photo['id'], st.session_state.current_session, canvas_result.json_data)
+                        st.success("Drawing saved!")
+                        st.rerun()
+            with col_clear:
+                if st.button("🗑️ Clear Drawing", key="preview_clear_drawing", use_container_width=True):
+                    update_photo_drawing(saved_photo['id'], st.session_state.current_session, None)
+                    st.success("Drawing cleared!")
+                    st.rerun()
+            
+            st.divider()
+            
+            # Option to move to a different session
+            st.markdown("### 📦 Organize")
+            move_to_session = st.selectbox(
+                "Move to different session:",
+                options=[s for s in st.session_state.sessions.keys()],
+                index=list(st.session_state.sessions.keys()).index(st.session_state.current_session),
+                key="preview_move_session"
+            )
+            if move_to_session != st.session_state.current_session:
+                if st.button(f"📦 Move to '{move_to_session}'", use_container_width=True):
+                    if move_photo(saved_photo['id'], st.session_state.current_session, move_to_session):
+                        st.success(f"Moved to '{move_to_session}'!")
+                        st.session_state.last_saved_photo_id = None
+                        st.session_state.camera_photo_hash = None
+                        st.rerun()
 
 # Gallery Tab
 with tab2:
@@ -270,6 +402,9 @@ with tab2:
     else:
         st.write(f"**{len(photos_to_display)} photo(s) found**")
         
+        # Drag and drop instructions
+        st.info("💡 **Tip**: Expand 'Quick Move' to reorganize photos between sessions. Expand 'Full Details & Actions' to annotate, draw, or manage photos.")
+        
         # Display photos in a grid
         for session_name, photo in photos_to_display:
             with st.container():
@@ -283,20 +418,51 @@ with tab2:
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
+                    # Clickable photo preview
                     st.image(photo['image'], use_container_width=True)
                 
                 with col2:
                     st.markdown(f"**Comment:**")
-                    st.text(photo['comment'] if photo['comment'] else "No comment")
+                    comment_preview = photo['comment'][:50] + "..." if len(photo['comment']) > 50 else photo['comment']
+                    st.text(comment_preview if comment_preview else "No comment")
                     
-                    # Display annotations
+                    # Display annotation count
+                    annotation_count = len(photo['annotations'])
+                    drawing_status = "Yes" if photo.get('drawing_data') else "No"
+                    st.caption(f"📝 {annotation_count} annotation(s)")
+                    st.caption(f"🎨 Drawing: {drawing_status}")
+                
+                # Move photo to different session - Quick access
+                with st.expander(f"📦 Move Photo {photo['id']} to Different Session", expanded=False):
+                    st.markdown("**Quick Move:** Select a session and click Move")
+                    move_to_session = st.selectbox(
+                        "Select target session:",
+                        options=[s for s in st.session_state.sessions.keys() if s != session_name],
+                        key=f"quick_move_{photo['id']}"
+                    )
+                    col_move, col_cancel = st.columns(2)
+                    with col_move:
+                        if st.button("✅ Move", key=f"quick_move_btn_{photo['id']}", use_container_width=True):
+                            if move_photo(photo['id'], session_name, move_to_session):
+                                st.success(f"Moved to '{move_to_session}'!")
+                                st.rerun()
+                
+                # Action buttons in expander - Full details and editing
+                with st.expander(f"⚙️ Full Details & Actions for Photo {photo['id']}", expanded=False):
+                    # Show full comment
+                    st.markdown("**Full Comment:**")
+                    st.write(photo['comment'] if photo['comment'] else "No comment")
+                    
+                    # Display all annotations
                     if photo['annotations']:
-                        st.markdown("**Annotations:**")
+                        st.markdown("**All Annotations:**")
                         for ann in photo['annotations']:
                             st.caption(f"• {ann['text']} ({ann['timestamp']})")
-                
-                # Action buttons in expander
-                with st.expander(f"⚙️ Actions for Photo {photo['id']}", expanded=False):
+                    else:
+                        st.caption("No annotations yet")
+                    
+                    st.divider()
+                    
                     # Edit comment
                     new_comment = st.text_area(
                         "Edit Comment",
@@ -398,25 +564,11 @@ with tab2:
                     
                     st.divider()
                     
-                    # Move to different session
-                    move_to_session = st.selectbox(
-                        "Move to Session:",
-                        options=[s for s in st.session_state.sessions.keys() if s != session_name],
-                        key=f"move_session_{photo['id']}"
-                    )
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        if st.button("📦 Move", key=f"move_{photo['id']}"):
-                            if move_photo(photo['id'], session_name, move_to_session):
-                                st.success(f"Moved to '{move_to_session}'!")
-                                st.rerun()
-                    
                     # Delete photo
-                    with col_b:
-                        if st.button("🗑️ Delete", key=f"delete_{photo['id']}", type="secondary"):
-                            if delete_photo(photo['id'], session_name):
-                                st.success("Photo deleted!")
-                                st.rerun()
+                    if st.button("🗑️ Delete Photo", key=f"delete_{photo['id']}", type="secondary", use_container_width=True):
+                        if delete_photo(photo['id'], session_name):
+                            st.success("Photo deleted!")
+                            st.rerun()
                 
                 st.divider()
 

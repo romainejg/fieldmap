@@ -7,7 +7,8 @@ A mobile-optimized Streamlit web application designed for biomedical engineers w
 ### 📸 Photo Capture
 - Take photos directly using your mobile device camera
 - Upload existing images from your device
-- Immediate preview of captured/uploaded photos
+- **Automatic save** to current session - no save button needed!
+- Immediate preview with annotation options
 
 ### 📝 Annotation & Comments
 - Add descriptive comments to each photo
@@ -91,21 +92,27 @@ The app is designed with mobile-first principles:
 - The active session is displayed at the top
 - Use "Take a photo" to capture with your camera
 - OR use "Upload from Device" to select existing images
-- Add a comment (optional)
-- Select which session to save to
-- Click "Save Photo"
+- **Photo saves automatically** to the current session
+- **Immediately annotate or draw** on the preview:
+  - Add or edit comments
+  - Add quick annotations
+  - Draw with various tools (freehand, arrows, boxes, circles)
+  - Choose colors and line widths
+  - Move photo to a different session if needed
 
 ### 3. View and Manage Photos
 - Go to the "Gallery" tab
 - Filter by session or view all photos
+- See photo count, annotations, and drawing status at a glance
 - For each photo, you can:
+  - **Click "View Details"** for full information
+  - **Quick Move** to organize photos between sessions
   - View the image and metadata
   - Edit the comment
   - Add text annotations
   - **Draw on photos** with various tools (circles, arrows, rectangles, freehand)
   - Customize drawing colors and line widths
   - Save or clear drawing annotations
-  - Move to a different session
   - Delete the photo
 
 ### 4. Export Data
