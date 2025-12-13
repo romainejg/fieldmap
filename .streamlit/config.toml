@@ -7,6 +7,7 @@ font = "sans serif"
 
 [server]
 headless = true
+# CORS is enabled to work with XSRF protection (required by Streamlit when enableXsrfProtection=true)
 enableCORS = true
 enableXsrfProtection = true
 maxUploadSize = 200

@@ -498,7 +498,7 @@ with tab2:
                                 img_width, img_height = photo['image'].size
                                 
                                 # Scale down large images for canvas display
-                                max_canvas_width = 400
+                                max_canvas_width = 600
                                 if img_width > max_canvas_width:
                                     scale = max_canvas_width / img_width
                                     canvas_width = max_canvas_width
