@@ -5,12 +5,9 @@ A Streamlit-based mobile web app for biomedical engineers to capture, annotate, 
 
 import streamlit as st
 import pandas as pd
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import io
-import os
-import json
 from datetime import datetime
-import base64
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -145,14 +142,6 @@ def export_to_excel():
             df.to_excel(writer, index=False, sheet_name='Photo Annotations')
         return output.getvalue()
     return None
-
-def get_image_download_link(img, filename, text):
-    """Generate a download link for an image"""
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    href = f'<a href="data:file/png;base64,{img_str}" download="{filename}">{text}</a>'
-    return href
 
 # Main App Title
 st.title("📸 Fieldmap - Cadaver Lab")
