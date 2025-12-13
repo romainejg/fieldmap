@@ -193,15 +193,14 @@ with st.sidebar:
     # Export functionality
     st.divider()
     st.subheader("📊 Export Data")
-    if st.button("Export to Excel", use_container_width=True):
+    if st.button("Export to Excel"):
         excel_data = export_to_excel()
         if excel_data:
             st.download_button(
                 label="📥 Download Excel File",
                 data=excel_data,
                 file_name=f"fieldmap_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
             st.warning("No data to export")
@@ -251,7 +250,7 @@ with tab1:
         
         # Show preview with annotation options
         st.subheader("📸 Preview & Annotate")
-        st.image(image, caption="Photo Preview", use_container_width=True)
+        st.image(image, caption="Photo Preview", use_column_width=True)
         
         # Get the saved photo data
         saved_photo = None
@@ -272,7 +271,7 @@ with tab1:
                 key="preview_comment",
                 placeholder="Enter a description or note for this photo..."
             )
-            if st.button("💾 Update Comment", use_container_width=True):
+            if st.button("💾 Update Comment"):
                 update_photo_comment(saved_photo['id'], st.session_state.current_session, photo_comment)
                 st.success("Comment updated!")
                 st.rerun()
@@ -283,7 +282,7 @@ with tab1:
                 key="preview_annotation",
                 placeholder="Add a quick note (e.g., 'Left ventricle', 'Damaged area')"
             )
-            if st.button("➕ Add Annotation", use_container_width=True):
+            if st.button("➕ Add Annotation"):
                 if quick_annotation:
                     add_annotation_to_photo(saved_photo['id'], st.session_state.current_session, quick_annotation)
                     st.success("Annotation added!")
@@ -350,13 +349,13 @@ with tab1:
             # Save drawing button
             col_save, col_clear = st.columns(2)
             with col_save:
-                if st.button("💾 Save Drawing", key="preview_save_drawing", use_container_width=True):
+                if st.button("💾 Save Drawing", key="preview_save_drawing"):
                     if canvas_result is not None and canvas_result.json_data is not None:
                         update_photo_drawing(saved_photo['id'], st.session_state.current_session, canvas_result.json_data)
                         st.success("Drawing saved!")
                         st.rerun()
             with col_clear:
-                if st.button("🗑️ Clear Drawing", key="preview_clear_drawing", use_container_width=True):
+                if st.button("🗑️ Clear Drawing", key="preview_clear_drawing"):
                     update_photo_drawing(saved_photo['id'], st.session_state.current_session, None)
                     st.success("Drawing cleared!")
                     st.rerun()
@@ -372,7 +371,7 @@ with tab1:
                 key="preview_move_session"
             )
             if move_to_session != st.session_state.current_session:
-                if st.button(f"📦 Move to '{move_to_session}'", use_container_width=True):
+                if st.button(f"📦 Move to '{move_to_session}'"):
                     if move_photo(saved_photo['id'], st.session_state.current_session, move_to_session):
                         st.success(f"Moved to '{move_to_session}'!")
                         st.session_state.last_saved_photo_id = None
@@ -422,7 +421,7 @@ with tab2:
                 
                 with col1:
                     # Clickable photo preview
-                    st.image(photo['image'], use_container_width=True)
+                    st.image(photo['image'], use_column_width=True)
                 
                 with col2:
                     st.markdown(f"**Comment:**")
@@ -445,7 +444,7 @@ with tab2:
                     )
                     col_move, col_cancel = st.columns(2)
                     with col_move:
-                        if st.button("✅ Move", key=f"quick_move_btn_{photo['id']}", use_container_width=True):
+                        if st.button("✅ Move", key=f"quick_move_btn_{photo['id']}"):
                             if move_photo(photo['id'], session_name, move_to_session):
                                 st.success(f"Moved to '{move_to_session}'!")
                                 st.rerun()
@@ -568,7 +567,7 @@ with tab2:
                     st.divider()
                     
                     # Delete photo
-                    if st.button("🗑️ Delete Photo", key=f"delete_{photo['id']}", type="secondary", use_container_width=True):
+                    if st.button("🗑️ Delete Photo", key=f"delete_{photo['id']}", type="secondary"):
                         if delete_photo(photo['id'], session_name):
                             st.success("Photo deleted!")
                             st.rerun()
