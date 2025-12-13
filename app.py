@@ -9,7 +9,6 @@ from PIL import Image
 import io
 from datetime import datetime
 from streamlit_drawable_canvas import st_canvas
-import numpy as np
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -138,13 +137,15 @@ def export_to_excel():
     for session_name, photos in st.session_state.sessions.items():
         for photo in photos:
             annotations_text = "; ".join([f"{ann['text']} ({ann['timestamp']})" for ann in photo['annotations']])
+            has_drawing = photo.get('drawing_data') is not None
             data.append({
                 'Session': session_name,
                 'Photo ID': photo['id'],
                 'Timestamp': photo['timestamp'],
                 'Comment': photo['comment'],
                 'Annotations': annotations_text,
-                'Annotation Count': len(photo['annotations'])
+                'Annotation Count': len(photo['annotations']),
+                'Has Drawing': 'Yes' if has_drawing else 'No'
             })
     
     if data:
@@ -385,7 +386,7 @@ with tab2:
                     col_save, col_clear = st.columns(2)
                     with col_save:
                         if st.button("💾 Save Drawing", key=f"save_drawing_{photo['id']}"):
-                            if canvas_result.json_data is not None:
+                            if canvas_result is not None and canvas_result.json_data is not None:
                                 update_photo_drawing(photo['id'], session_name, canvas_result.json_data)
                                 st.success("Drawing saved!")
                                 st.rerun()
