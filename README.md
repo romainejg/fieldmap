@@ -13,6 +13,9 @@ A mobile-optimized Streamlit web application designed for biomedical engineers w
 - Add descriptive comments to each photo
 - Add multiple annotations with timestamps
 - Edit comments at any time
+- **Draw on photos** with circles, arrows, rectangles, and freehand drawing
+- Customize drawing color and line width
+- Save and clear drawing annotations
 
 ### 🗂️ Session Management
 - Create multiple sessions for different experiments or procedures
@@ -98,7 +101,10 @@ The app is designed with mobile-first principles:
 - For each photo, you can:
   - View the image and metadata
   - Edit the comment
-  - Add annotations
+  - Add text annotations
+  - **Draw on photos** with various tools (circles, arrows, rectangles, freehand)
+  - Customize drawing colors and line widths
+  - Save or clear drawing annotations
   - Move to a different session
   - Delete the photo
 
@@ -145,12 +151,12 @@ fieldmap/
 ## Future Enhancements
 
 Potential features for future versions:
-- Drawing/annotation tools on images
 - Database backend for permanent storage
 - User authentication
 - Cloud storage integration
 - PDF report generation
 - Image metadata extraction
+- Export drawings as overlaid images
 
 ## Troubleshooting
 

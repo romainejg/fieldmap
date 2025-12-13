@@ -8,6 +8,8 @@ import pandas as pd
 from PIL import Image
 import io
 from datetime import datetime
+from streamlit_drawable_canvas import st_canvas
+import numpy as np
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -73,7 +75,8 @@ def add_photo_to_session(image, session_name, comment=""):
         'image': image,
         'comment': comment,
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'annotations': []
+        'annotations': [],
+        'drawing_data': None  # Store drawing annotations
     }
     st.session_state.sessions[session_name].append(photo_data)
     return photo_data['id']
@@ -117,6 +120,15 @@ def update_photo_comment(photo_id, session_name, new_comment):
         for photo in st.session_state.sessions[session_name]:
             if photo['id'] == photo_id:
                 photo['comment'] = new_comment
+                return True
+    return False
+
+def update_photo_drawing(photo_id, session_name, drawing_data):
+    """Update the drawing annotation for a photo"""
+    if session_name in st.session_state.sessions:
+        for photo in st.session_state.sessions[session_name]:
+            if photo['id'] == photo_id:
+                photo['drawing_data'] = drawing_data
                 return True
     return False
 
@@ -305,6 +317,85 @@ with tab2:
                             add_annotation_to_photo(photo['id'], session_name, new_annotation)
                             st.success("Annotation added!")
                             st.rerun()
+                    
+                    st.divider()
+                    
+                    # Drawing Annotation
+                    st.markdown("**🎨 Draw on Photo** (circles, arrows, highlights)")
+                    
+                    # Drawing mode selector
+                    drawing_mode = st.selectbox(
+                        "Drawing Tool:",
+                        options=["freedraw", "line", "rect", "circle", "transform"],
+                        format_func=lambda x: {
+                            "freedraw": "✏️ Free Draw",
+                            "line": "↗️ Line/Arrow",
+                            "rect": "⬜ Rectangle",
+                            "circle": "⭕ Circle",
+                            "transform": "🔄 Move/Resize"
+                        }[x],
+                        key=f"drawing_mode_{photo['id']}"
+                    )
+                    
+                    # Color and stroke width
+                    col_color, col_stroke = st.columns(2)
+                    with col_color:
+                        stroke_color = st.color_picker(
+                            "Color:",
+                            value="#FF0000",
+                            key=f"stroke_color_{photo['id']}"
+                        )
+                    with col_stroke:
+                        stroke_width = st.slider(
+                            "Width:",
+                            min_value=1,
+                            max_value=20,
+                            value=3,
+                            key=f"stroke_width_{photo['id']}"
+                        )
+                    
+                    # Get image dimensions
+                    img_width, img_height = photo['image'].size
+                    
+                    # Scale down large images for canvas display
+                    max_canvas_width = 600
+                    if img_width > max_canvas_width:
+                        scale = max_canvas_width / img_width
+                        canvas_width = max_canvas_width
+                        canvas_height = int(img_height * scale)
+                    else:
+                        canvas_width = img_width
+                        canvas_height = img_height
+                    
+                    # Create drawable canvas
+                    canvas_result = st_canvas(
+                        fill_color="rgba(255, 165, 0, 0.3)",
+                        stroke_width=stroke_width,
+                        stroke_color=stroke_color,
+                        background_image=photo['image'],
+                        update_streamlit=True,
+                        height=canvas_height,
+                        width=canvas_width,
+                        drawing_mode=drawing_mode,
+                        initial_drawing=photo.get('drawing_data'),
+                        key=f"canvas_{photo['id']}"
+                    )
+                    
+                    # Save drawing button
+                    col_save, col_clear = st.columns(2)
+                    with col_save:
+                        if st.button("💾 Save Drawing", key=f"save_drawing_{photo['id']}"):
+                            if canvas_result.json_data is not None:
+                                update_photo_drawing(photo['id'], session_name, canvas_result.json_data)
+                                st.success("Drawing saved!")
+                                st.rerun()
+                    with col_clear:
+                        if st.button("🗑️ Clear Drawing", key=f"clear_drawing_{photo['id']}"):
+                            update_photo_drawing(photo['id'], session_name, None)
+                            st.success("Drawing cleared!")
+                            st.rerun()
+                    
+                    st.divider()
                     
                     # Move to different session
                     move_to_session = st.selectbox(
