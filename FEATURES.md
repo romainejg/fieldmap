@@ -92,11 +92,13 @@
 ### 2. Photo Capture
 - **Mobile Camera**: Direct integration with device camera
 - **File Upload**: Alternative upload from device storage
-- **Session Selection**: Choose target session before saving
+- **Auto-Save**: Photos save automatically to current session
+- **Immediate Annotation**: Add notes or draw right after capture
 
 ### 3. Photo Organization
 - **Gallery View**: Browse all photos or filter by session
-- **Move Photos**: Reorganize photos between sessions
+- **Quick Move**: Easily reorganize photos between sessions with dedicated controls
+- **Click for Details**: View full details and manage each photo
 - **Delete Photos**: Remove unwanted images
 
 ### 4. Annotations
@@ -135,7 +137,7 @@
 
 2. **Capture Photos**
    ```
-   Camera Tab → Take Photo → Add Comment → Save to Session
+   Camera Tab → Take Photo → Auto-saved! → Add Comment/Draw → Organize
    ```
 
 3. **Annotate**

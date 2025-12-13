@@ -9,7 +9,9 @@ Successfully implemented a complete mobile-optimized Streamlit web application f
 1. **Photo Capture & Upload**
    - Direct camera integration for mobile devices
    - File upload option for existing images
-   - Real-time preview of captured/uploaded photos
+   - **Automatic save** when photo is captured or uploaded
+   - Real-time preview with immediate annotation options
+   - Drawing tools available in preview
 
 2. **Session Management**
    - Create multiple sessions for different experiments
@@ -25,7 +27,9 @@ Successfully implemented a complete mobile-optimized Streamlit web application f
 
 4. **Gallery View**
    - Browse all photos or filter by session
-   - Mobile-friendly card layout
+   - Mobile-friendly card layout with photo counts and status
+   - **Quick move** functionality for easy reorganization
+   - **Click-to-view** details for comprehensive photo management
    - Complete photo management (view, edit, move, delete)
 
 5. **Excel Export**
