@@ -61,6 +61,52 @@ if 'current_session' not in st.session_state:
 if 'photo_counter' not in st.session_state:
     st.session_state.photo_counter = 0
 
+def parse_color(color_str):
+    """
+    Parse color string (hex or rgba format) and return a valid PIL color.
+    
+    Args:
+        color_str: Color string (e.g., '#FF0000', 'rgba(255, 0, 0, 0.5)')
+    
+    Returns:
+        Tuple (color, alpha) where color is in PIL format and alpha is 0-255
+    """
+    if not color_str or color_str == 'transparent':
+        return None
+    
+    # Handle hex colors
+    if color_str.startswith('#'):
+        return color_str
+    
+    # Handle rgba format: rgba(r, g, b, a)
+    if color_str.startswith('rgba('):
+        try:
+            # Extract values from rgba(r, g, b, a)
+            vals = color_str[5:-1].split(',')
+            r = int(vals[0].strip())
+            g = int(vals[1].strip())
+            b = int(vals[2].strip())
+            a = float(vals[3].strip())
+            # Convert alpha from 0-1 to 0-255
+            alpha = int(a * 255)
+            return (r, g, b, alpha)
+        except (ValueError, IndexError):
+            return '#FF0000'  # Default to red on parse error
+    
+    # Handle rgb format: rgb(r, g, b)
+    if color_str.startswith('rgb('):
+        try:
+            vals = color_str[4:-1].split(',')
+            r = int(vals[0].strip())
+            g = int(vals[1].strip())
+            b = int(vals[2].strip())
+            return (r, g, b)
+        except (ValueError, IndexError):
+            return '#FF0000'  # Default to red on parse error
+    
+    # Default for unknown formats
+    return '#FF0000'
+
 def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
     """
     Render canvas drawing data onto a PIL Image.
@@ -97,11 +143,10 @@ def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
         stroke = obj.get('stroke', '#FF0000')
         stroke_width = int(obj.get('strokeWidth', 3) * max(scale_x, scale_y))
         
-        # Parse stroke color (handle hex colors)
-        if stroke.startswith('#'):
-            stroke_color = stroke
-        else:
-            stroke_color = '#FF0000'  # Default to red
+        # Parse stroke color
+        stroke_color = parse_color(stroke)
+        if stroke_color is None:
+            stroke_color = '#FF0000'
         
         if obj_type == 'path':
             # Freehand drawing
@@ -135,8 +180,8 @@ def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
             x1, y1 = left, top
             x2, y2 = left + width, top + height
             
-            fill_color = obj.get('fill')
-            if fill_color and fill_color != 'transparent':
+            fill_color = parse_color(obj.get('fill'))
+            if fill_color is not None:
                 # Draw filled rectangle
                 draw.rectangle([x1, y1, x2, y2], outline=stroke_color, fill=fill_color, width=stroke_width)
             else:
@@ -154,8 +199,8 @@ def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
             x2 = left + radius
             y2 = top + radius
             
-            fill_color = obj.get('fill')
-            if fill_color and fill_color != 'transparent':
+            fill_color = parse_color(obj.get('fill'))
+            if fill_color is not None:
                 # Draw filled circle
                 draw.ellipse([x1, y1, x2, y2], outline=stroke_color, fill=fill_color, width=stroke_width)
             else:
