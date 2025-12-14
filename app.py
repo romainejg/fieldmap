@@ -1,16 +1,15 @@
 """
 Fieldmap - Cadaver Lab Photo Annotation App
 A Streamlit-based mobile web app for biomedical engineers to capture, annotate, and organize photos
+NEW APPROACH: Simpler drawing interface without streamlit-drawable-canvas
 """
 
 import streamlit as st
 import pandas as pd
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import io
 from datetime import datetime
-from streamlit_drawable_canvas import st_canvas
 import hashlib
-import numpy as np
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -61,175 +60,93 @@ if 'current_session' not in st.session_state:
 if 'photo_counter' not in st.session_state:
     st.session_state.photo_counter = 0
 
-def parse_color(color_str):
+def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="", position_percent=0.5):
     """
-    Parse color string (hex or rgba format) and return a valid PIL color.
+    Draw a simple annotation directly on the image using PIL.
     
     Args:
-        color_str: Color string (e.g., '#FF0000', 'rgba(255, 0, 0, 0.5)')
+        image: PIL Image object
+        annotation_type: Type of annotation ('arrow', 'circle', 'box', 'text')
+        color: Color in hex format (e.g., '#FF0000')
+        stroke_width: Width of the stroke
+        text: Text to add (for text annotations)
+        position_percent: Position on image (0.0 to 1.0) - used for simple placement
     
     Returns:
-        Tuple (color, alpha) where color is in PIL format and alpha is 0-255
+        PIL Image with annotation drawn
     """
-    if not color_str or color_str == 'transparent':
-        return None
-    
-    # Handle hex colors
-    if color_str.startswith('#'):
-        return color_str
-    
-    # Handle rgba format: rgba(r, g, b, a)
-    if color_str.startswith('rgba('):
-        try:
-            # Extract values from rgba(r, g, b, a)
-            vals = color_str[5:-1].split(',')
-            r = int(vals[0].strip())
-            g = int(vals[1].strip())
-            b = int(vals[2].strip())
-            a = float(vals[3].strip())
-            # Convert alpha from 0-1 to 0-255
-            alpha = int(a * 255)
-            return (r, g, b, alpha)
-        except (ValueError, IndexError):
-            return '#FF0000'  # Default to red on parse error
-    
-    # Handle rgb format: rgb(r, g, b)
-    if color_str.startswith('rgb('):
-        try:
-            vals = color_str[4:-1].split(',')
-            r = int(vals[0].strip())
-            g = int(vals[1].strip())
-            b = int(vals[2].strip())
-            return (r, g, b)
-        except (ValueError, IndexError):
-            return '#FF0000'  # Default to red on parse error
-    
-    # Default for unknown formats
-    return '#FF0000'
-
-def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
-    """
-    Render canvas drawing data onto a PIL Image.
-    
-    Args:
-        image: PIL Image object (original image)
-        drawing_data: JSON data from streamlit_drawable_canvas
-        canvas_width: Width of the canvas used for drawing
-        canvas_height: Height of the canvas used for drawing
-    
-    Returns:
-        PIL Image with drawings overlaid
-    """
-    if drawing_data is None or 'objects' not in drawing_data:
-        return image.copy()
-    
-    # Validate canvas dimensions to prevent division by zero
-    if canvas_width <= 0 or canvas_height <= 0:
-        return image.copy()
-    
-    # Create a copy of the original image
+    # Create a copy to avoid modifying original
     img_copy = image.copy()
+    if img_copy.mode != 'RGB':
+        img_copy = img_copy.convert('RGB')
     
-    # Get original image dimensions
-    img_width, img_height = image.size
+    draw = ImageDraw.Draw(img_copy)
+    width, height = img_copy.size
     
-    # Calculate scaling factors (canvas may be scaled differently from original image)
-    scale_x = img_width / canvas_width
-    scale_y = img_height / canvas_height
+    # Calculate position based on percentage
+    center_x = int(width * position_percent)
+    center_y = int(height * position_percent)
     
-    # Create a transparent overlay for drawings
-    overlay = Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    
-    # Path segment indices for clarity
-    PATH_CMD, PATH_X, PATH_Y = 0, 1, 2
-    
-    # Process each drawing object
-    for obj in drawing_data['objects']:
-        obj_type = obj.get('type')
-        stroke = obj.get('stroke', '#FF0000')
-        # Ensure stroke width is at least 1 pixel
-        stroke_width = max(1, int(obj.get('strokeWidth', 3) * max(scale_x, scale_y)))
+    if annotation_type == 'arrow':
+        # Draw a simple arrow pointing down
+        start_x, start_y = center_x, int(height * 0.2)
+        end_x, end_y = center_x, int(height * 0.4)
         
-        # Parse stroke color
-        stroke_color = parse_color(stroke)
-        if stroke_color is None:
-            stroke_color = '#FF0000'
+        # Main line
+        draw.line([(start_x, start_y), (end_x, end_y)], fill=color, width=stroke_width)
         
-        if obj_type == 'path':
-            # Freehand drawing
-            path = obj.get('path', [])
-            if len(path) > 1:
-                points = []
-                for segment in path:
-                    if len(segment) >= 3:
-                        x = segment[PATH_X] * scale_x
-                        y = segment[PATH_Y] * scale_y
-                        points.append((x, y))
-                
-                if len(points) > 1:
-                    # Note: PIL's line() doesn't support 'joint' parameter
-                    draw.line(points, fill=stroke_color, width=stroke_width)
+        # Arrowhead
+        arrow_size = stroke_width * 3
+        draw.polygon([
+            (end_x, end_y),
+            (end_x - arrow_size, end_y - arrow_size),
+            (end_x + arrow_size, end_y - arrow_size)
+        ], fill=color)
+    
+    elif annotation_type == 'circle':
+        # Draw a circle in the center-ish area
+        radius = min(width, height) // 8
+        draw.ellipse([
+            center_x - radius, center_y - radius,
+            center_x + radius, center_y + radius
+        ], outline=color, width=stroke_width)
+    
+    elif annotation_type == 'box':
+        # Draw a rectangle in the center area
+        box_size = min(width, height) // 6
+        draw.rectangle([
+            center_x - box_size, center_y - box_size,
+            center_x + box_size, center_y + box_size
+        ], outline=color, width=stroke_width)
+    
+    elif annotation_type == 'text' and text:
+        # Draw text annotation
+        try:
+            # Try to use a larger font
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size=max(20, width // 30))
+        except:
+            # Fallback to default font
+            font = ImageFont.load_default()
         
-        elif obj_type == 'line':
-            # Line/Arrow
-            x1 = obj.get('x1', 0) * scale_x
-            y1 = obj.get('y1', 0) * scale_y
-            x2 = obj.get('x2', 0) * scale_x
-            y2 = obj.get('y2', 0) * scale_y
-            draw.line([(x1, y1), (x2, y2)], fill=stroke_color, width=stroke_width)
+        # Draw text with background for visibility
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
         
-        elif obj_type == 'rect':
-            # Rectangle
-            left = obj.get('left', 0) * scale_x
-            top = obj.get('top', 0) * scale_y
-            width = obj.get('width', 0) * scale_x
-            height = obj.get('height', 0) * scale_y
-            
-            x1, y1 = left, top
-            x2, y2 = left + width, top + height
-            
-            fill_color = parse_color(obj.get('fill'))
-            if fill_color is not None:
-                # Draw filled rectangle
-                draw.rectangle([x1, y1, x2, y2], outline=stroke_color, fill=fill_color, width=stroke_width)
-            else:
-                # Draw outline only
-                draw.rectangle([x1, y1, x2, y2], outline=stroke_color, width=stroke_width)
+        text_x = center_x - text_width // 2
+        text_y = int(height * 0.1)
         
-        elif obj_type == 'circle':
-            # Circle
-            left = obj.get('left', 0) * scale_x
-            top = obj.get('top', 0) * scale_y
-            radius = obj.get('radius', 0) * max(scale_x, scale_y)
-            
-            x1 = left - radius
-            y1 = top - radius
-            x2 = left + radius
-            y2 = top + radius
-            
-            fill_color = parse_color(obj.get('fill'))
-            if fill_color is not None:
-                # Draw filled circle
-                draw.ellipse([x1, y1, x2, y2], outline=stroke_color, fill=fill_color, width=stroke_width)
-            else:
-                # Draw outline only
-                draw.ellipse([x1, y1, x2, y2], outline=stroke_color, width=stroke_width)
+        # Background rectangle
+        padding = 5
+        draw.rectangle([
+            text_x - padding, text_y - padding,
+            text_x + text_width + padding, text_y + text_height + padding
+        ], fill='white', outline=color, width=2)
+        
+        # Text
+        draw.text((text_x, text_y), text, fill=color, font=font)
     
-    # Convert original image to RGBA if needed
-    if img_copy.mode != 'RGBA':
-        img_copy = img_copy.convert('RGBA')
-    
-    # Composite the overlay onto the image
-    result = Image.alpha_composite(img_copy, overlay)
-    
-    # Convert back to RGB
-    if result.mode == 'RGBA':
-        rgb_result = Image.new('RGB', result.size, (255, 255, 255))
-        rgb_result.paste(result, mask=result.split()[3])
-        return rgb_result
-    
-    return result
+    return img_copy
 
 def create_new_session(session_name):
     """Create a new session"""
@@ -243,11 +160,11 @@ def add_photo_to_session(image, session_name, comment=""):
     st.session_state.photo_counter += 1
     photo_data = {
         'id': st.session_state.photo_counter,
-        'image': image,
-        'annotated_image': None,  # Store image with drawings overlaid
+        'original_image': image.copy(),  # Keep original
+        'current_image': image.copy(),   # Working copy with annotations
         'comment': comment,
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'drawing_data': None  # Store drawing annotations
+        'has_annotations': False
     }
     st.session_state.sessions[session_name].append(photo_data)
     return photo_data['id']
@@ -282,26 +199,31 @@ def update_photo_comment(photo_id, session_name, new_comment):
                 return True
     return False
 
-def update_photo_drawing(photo_id, session_name, drawing_data, canvas_width=None, canvas_height=None):
-    """Update the drawing annotation for a photo and create annotated image"""
+def add_annotation_to_photo(photo_id, session_name, annotation_type, color, stroke_width, text="", position=0.5):
+    """Add an annotation directly to the photo"""
     if session_name in st.session_state.sessions:
         for photo in st.session_state.sessions[session_name]:
             if photo['id'] == photo_id:
-                photo['drawing_data'] = drawing_data
-                
-                # If drawing data exists and canvas dimensions provided, create annotated image
-                if drawing_data is not None and canvas_width is not None and canvas_height is not None:
-                    annotated_img = render_drawing_on_image(
-                        photo['image'], 
-                        drawing_data, 
-                        canvas_width, 
-                        canvas_height
-                    )
-                    photo['annotated_image'] = annotated_img
-                else:
-                    # Clear annotated image if no drawing
-                    photo['annotated_image'] = None
-                
+                # Apply annotation to current image
+                photo['current_image'] = draw_annotation_on_image(
+                    photo['current_image'],
+                    annotation_type,
+                    color,
+                    stroke_width,
+                    text,
+                    position
+                )
+                photo['has_annotations'] = True
+                return True
+    return False
+
+def reset_photo_annotations(photo_id, session_name):
+    """Reset photo to original (remove all annotations)"""
+    if session_name in st.session_state.sessions:
+        for photo in st.session_state.sessions[session_name]:
+            if photo['id'] == photo_id:
+                photo['current_image'] = photo['original_image'].copy()
+                photo['has_annotations'] = False
                 return True
     return False
 
@@ -310,15 +232,12 @@ def export_to_excel():
     data = []
     for session_name, photos in st.session_state.sessions.items():
         for photo in photos:
-            has_drawing = photo.get('drawing_data') is not None
-            has_annotated_image = photo.get('annotated_image') is not None
             data.append({
                 'Session': session_name,
                 'Photo ID': photo['id'],
                 'Timestamp': photo['timestamp'],
                 'Comment': photo['comment'],
-                'Has Drawing': 'Yes' if has_drawing else 'No',
-                'Annotated Image Saved': 'Yes' if has_annotated_image else 'No'
+                'Has Annotations': 'Yes' if photo['has_annotations'] else 'No'
             })
     
     if data:
@@ -406,7 +325,7 @@ with tab1:
     
     if image_to_add is not None:
         image = Image.open(image_to_add)
-        # Convert image to RGB mode to ensure compatibility with Streamlit
+        # Convert image to RGB mode to ensure compatibility
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
@@ -440,32 +359,22 @@ with tab1:
                     saved_photo = photo
                     break
         
-        # Show original image and annotated if exists
-        if saved_photo and saved_photo.get('annotated_image') is not None:
-            col_orig, col_annot = st.columns(2)
-            with col_orig:
-                st.markdown("**Original:**")
-                st.image(image, use_column_width=True)
-            with col_annot:
-                st.markdown("**📝 With Drawings:**")
-                st.image(saved_photo['annotated_image'], use_column_width=True)
+        if saved_photo:
+            # Show current image (with any annotations)
+            st.image(saved_photo['current_image'], caption="Photo Preview", use_column_width=True)
             
-            # Download button for annotated image
+            # Download button for current image
             buf = io.BytesIO()
-            saved_photo['annotated_image'].save(buf, format='PNG')
+            saved_photo['current_image'].save(buf, format='PNG')
             buf.seek(0)
             st.download_button(
-                label="📥 Download Annotated Image",
+                label="📥 Download Photo" + (" (with annotations)" if saved_photo['has_annotations'] else ""),
                 data=buf,
-                file_name=f"annotated_photo_{saved_photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                file_name=f"photo_{saved_photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                 mime="image/png",
-                key="download_preview_annotated"
+                key="download_preview"
             )
-        else:
-            st.image(image, caption="Photo Preview", use_column_width=True)
-        
-        if saved_photo:
-            # Immediate annotation options
+            
             st.markdown("### ✏️ Add Notes & Draw")
             
             # Add/Edit comment
@@ -482,80 +391,75 @@ with tab1:
             
             st.divider()
             
-            # Drawing tools (part of annotation)
-            st.markdown("#### 🎨 Draw on Photo")
+            # Simple drawing tools
+            st.markdown("#### 🎨 Add Annotations to Photo")
+            st.info("💡 Annotations are added directly to the photo. Use 'Reset' to remove all.")
             
-            col_mode, col_color, col_width = st.columns(3)
-            with col_mode:
-                drawing_mode = st.selectbox(
-                    "Tool:",
-                    options=["freedraw", "line", "rect", "circle"],
+            col1, col2 = st.columns(2)
+            with col1:
+                annotation_type = st.selectbox(
+                    "Annotation Type:",
+                    options=["arrow", "circle", "box", "text"],
                     format_func=lambda x: {
-                        "freedraw": "✏️ Draw",
-                        "line": "↗️ Arrow",
-                        "rect": "⬜ Box",
-                        "circle": "⭕ Circle"
+                        "arrow": "↗️ Arrow",
+                        "circle": "⭕ Circle",
+                        "box": "⬜ Box",
+                        "text": "📝 Text"
                     }[x],
-                    key="preview_drawing_mode"
+                    key="preview_annotation_type"
                 )
-            with col_color:
-                stroke_color = st.color_picker(
+            with col2:
+                annotation_color = st.color_picker(
                     "Color:",
                     value="#FF0000",
-                    key="preview_stroke_color"
-                )
-            with col_width:
-                stroke_width = st.slider(
-                    "Width:",
-                    min_value=1,
-                    max_value=20,
-                    value=3,
-                    key="preview_stroke_width"
+                    key="preview_color"
                 )
             
-            # Get image dimensions for canvas
-            img_width, img_height = image.size
-            max_canvas_width = 600
-            if img_width > max_canvas_width:
-                scale = max_canvas_width / img_width
-                canvas_width = max_canvas_width
-                canvas_height = int(img_height * scale)
-            else:
-                canvas_width = img_width
-                canvas_height = img_height
-            
-            # Create drawable canvas
-            canvas_result = st_canvas(
-                fill_color="rgba(255, 165, 0, 0.3)",
-                stroke_width=stroke_width,
-                stroke_color=stroke_color,
-                background_image=image,
-                update_streamlit=True,
-                height=canvas_height,
-                width=canvas_width,
-                drawing_mode=drawing_mode,
-                initial_drawing=saved_photo.get('drawing_data'),
-                key="preview_canvas"
+            stroke_width = st.slider(
+                "Line Width:",
+                min_value=1,
+                max_value=10,
+                value=3,
+                key="preview_stroke"
             )
             
-            # Save drawing button
-            col_save, col_clear = st.columns(2)
-            with col_save:
-                if st.button("💾 Save Drawing", key="preview_save_drawing"):
-                    if canvas_result is not None and canvas_result.json_data is not None:
-                        update_photo_drawing(
-                            saved_photo['id'], 
-                            st.session_state.current_session, 
-                            canvas_result.json_data,
-                            canvas_width,
-                            canvas_height
-                        )
-                        st.success("✅ Drawing saved and overlaid on image!")
-                        st.rerun()
-            with col_clear:
-                if st.button("🗑️ Clear Drawing", key="preview_clear_drawing"):
-                    update_photo_drawing(saved_photo['id'], st.session_state.current_session, None)
-                    st.success("Drawing cleared!")
+            annotation_text = ""
+            if annotation_type == "text":
+                annotation_text = st.text_input(
+                    "Text to add:",
+                    key="preview_text",
+                    placeholder="Enter text..."
+                )
+            
+            position = st.slider(
+                "Position (left ← → right):",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.5,
+                step=0.1,
+                key="preview_position"
+            )
+            
+            col_add, col_reset = st.columns(2)
+            with col_add:
+                can_add = annotation_type != "text" or annotation_text
+                if st.button("➕ Add Annotation", disabled=not can_add, key="preview_add"):
+                    add_annotation_to_photo(
+                        saved_photo['id'],
+                        st.session_state.current_session,
+                        annotation_type,
+                        annotation_color,
+                        stroke_width,
+                        annotation_text,
+                        position
+                    )
+                    st.success("✅ Annotation added!")
+                    st.rerun()
+            
+            with col_reset:
+                if st.button("🔄 Reset All Annotations", key="preview_reset"):
+                    reset_photo_annotations(saved_photo['id'], st.session_state.current_session)
+                    st.success("Annotations cleared!")
                     st.rerun()
             
             st.divider()
@@ -602,9 +506,6 @@ with tab2:
     else:
         st.write(f"**{len(photos_to_display)} photo(s) found**")
         
-        # Instructions
-        st.info("💡 **Tip**: Click on a photo thumbnail to view/edit. Use 'Quick Move' dropdown to move photos between sessions.")
-        
         # Display photos in a grid layout (iPhone-style)
         # Create rows with 3 columns for thumbnails
         cols_per_row = 3
@@ -615,13 +516,13 @@ with tab2:
                     session_name, photo = photos_to_display[i + j]
                     with cols[j]:
                         # Thumbnail image
-                        st.image(photo['image'], use_column_width=True)
+                        st.image(photo['current_image'], use_column_width=True)
                         
                         # Session badge and metadata
                         st.markdown(f"""
                         <div style="font-size: 0.8em; padding: 2px;">
                             <span style="background-color: #4CAF50; color: white; padding: 2px 6px; border-radius: 8px; font-size: 0.75em;">{session_name}</span>
-                            <br/>ID: {photo['id']} | 🎨: {"✓" if photo.get('drawing_data') else "✗"}
+                            <br/>ID: {photo['id']} | 🎨: {"✓" if photo['has_annotations'] else "✗"}
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -654,28 +555,30 @@ with tab2:
                                 
                                 st.markdown("---")
                                 
-                                # Show original and annotated images
-                                if photo.get('annotated_image') is not None:
-                                    st.markdown("**Original Image:**")
-                                    st.image(photo['image'], use_column_width=True)
-                                    
-                                    st.markdown("**📝 Annotated Image (with drawings):**")
-                                    st.image(photo['annotated_image'], use_column_width=True)
-                                    
-                                    # Download annotated image button
-                                    buf = io.BytesIO()
-                                    photo['annotated_image'].save(buf, format='PNG')
-                                    buf.seek(0)
-                                    st.download_button(
-                                        label="📥 Download Annotated Image",
-                                        data=buf,
-                                        file_name=f"annotated_photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                                        mime="image/png",
-                                        key=f"download_annotated_{photo['id']}"
-                                    )
+                                # Show original and current (annotated) images
+                                if photo['has_annotations']:
+                                    col_orig, col_curr = st.columns(2)
+                                    with col_orig:
+                                        st.markdown("**Original:**")
+                                        st.image(photo['original_image'], use_column_width=True)
+                                    with col_curr:
+                                        st.markdown("**With Annotations:**")
+                                        st.image(photo['current_image'], use_column_width=True)
                                 else:
                                     st.markdown("**Image:**")
-                                    st.image(photo['image'], use_column_width=True)
+                                    st.image(photo['current_image'], use_column_width=True)
+                                
+                                # Download button
+                                buf = io.BytesIO()
+                                photo['current_image'].save(buf, format='PNG')
+                                buf.seek(0)
+                                st.download_button(
+                                    label="📥 Download Photo" + (" (with annotations)" if photo['has_annotations'] else ""),
+                                    data=buf,
+                                    file_name=f"photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                    mime="image/png",
+                                    key=f"download_{photo['id']}"
+                                )
                                 
                                 # Metadata
                                 st.caption(f"**Session:** {session_name}")
@@ -697,85 +600,75 @@ with tab2:
                                 
                                 st.divider()
                                 
-                                # Drawing Annotation
-                                st.markdown("**🎨 Draw on Photo**")
+                                # Drawing tools
+                                st.markdown("**🎨 Add Annotations**")
+                                st.info("💡 Annotations are added directly to the photo. Use 'Reset' to remove all.")
                                 
-                                # Drawing mode selector
-                                drawing_mode = st.selectbox(
-                                    "Tool:",
-                                    options=["freedraw", "line", "rect", "circle", "transform"],
-                                    format_func=lambda x: {
-                                        "freedraw": "✏️ Draw",
-                                        "line": "↗️ Arrow",
-                                        "rect": "⬜ Box",
-                                        "circle": "⭕ Circle",
-                                        "transform": "🔄 Move"
-                                    }[x],
-                                    key=f"drawing_mode_{photo['id']}"
-                                )
-                                
-                                # Color and stroke width
-                                col_color, col_stroke = st.columns(2)
-                                with col_color:
-                                    stroke_color = st.color_picker(
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    annotation_type = st.selectbox(
+                                        "Type:",
+                                        options=["arrow", "circle", "box", "text"],
+                                        format_func=lambda x: {
+                                            "arrow": "↗️ Arrow",
+                                            "circle": "⭕ Circle",
+                                            "box": "⬜ Box",
+                                            "text": "📝 Text"
+                                        }[x],
+                                        key=f"annotation_type_{photo['id']}"
+                                    )
+                                with col2:
+                                    annotation_color = st.color_picker(
                                         "Color:",
                                         value="#FF0000",
-                                        key=f"stroke_color_{photo['id']}"
-                                    )
-                                with col_stroke:
-                                    stroke_width = st.slider(
-                                        "Width:",
-                                        min_value=1,
-                                        max_value=20,
-                                        value=3,
-                                        key=f"stroke_width_{photo['id']}"
+                                        key=f"color_{photo['id']}"
                                     )
                                 
-                                # Get image dimensions
-                                img_width, img_height = photo['image'].size
-                                
-                                # Scale down large images for canvas display
-                                max_canvas_width = 600
-                                if img_width > max_canvas_width:
-                                    scale = max_canvas_width / img_width
-                                    canvas_width = max_canvas_width
-                                    canvas_height = int(img_height * scale)
-                                else:
-                                    canvas_width = img_width
-                                    canvas_height = img_height
-                                
-                                # Create drawable canvas
-                                canvas_result = st_canvas(
-                                    fill_color="rgba(255, 165, 0, 0.3)",
-                                    stroke_width=stroke_width,
-                                    stroke_color=stroke_color,
-                                    background_image=photo['image'],
-                                    update_streamlit=True,
-                                    height=canvas_height,
-                                    width=canvas_width,
-                                    drawing_mode=drawing_mode,
-                                    initial_drawing=photo.get('drawing_data'),
-                                    key=f"canvas_{photo['id']}"
+                                stroke_width = st.slider(
+                                    "Line Width:",
+                                    min_value=1,
+                                    max_value=10,
+                                    value=3,
+                                    key=f"stroke_{photo['id']}"
                                 )
                                 
-                                # Save drawing button
-                                col_save, col_clear = st.columns(2)
-                                with col_save:
-                                    if st.button("💾 Save Drawing", key=f"save_drawing_{photo['id']}"):
-                                        if canvas_result is not None and canvas_result.json_data is not None:
-                                            update_photo_drawing(
-                                                photo['id'], 
-                                                session_name, 
-                                                canvas_result.json_data,
-                                                canvas_width,
-                                                canvas_height
-                                            )
-                                            st.success("✅ Drawing saved and overlaid on image!")
-                                            st.rerun()
-                                with col_clear:
-                                    if st.button("🗑️ Clear Drawing", key=f"clear_drawing_{photo['id']}"):
-                                        update_photo_drawing(photo['id'], session_name, None)
-                                        st.success("Drawing cleared!")
+                                annotation_text = ""
+                                if annotation_type == "text":
+                                    annotation_text = st.text_input(
+                                        "Text:",
+                                        key=f"text_{photo['id']}",
+                                        placeholder="Enter text..."
+                                    )
+                                
+                                position = st.slider(
+                                    "Position (left ← → right):",
+                                    min_value=0.0,
+                                    max_value=1.0,
+                                    value=0.5,
+                                    step=0.1,
+                                    key=f"position_{photo['id']}"
+                                )
+                                
+                                col_add, col_reset = st.columns(2)
+                                with col_add:
+                                    can_add = annotation_type != "text" or annotation_text
+                                    if st.button("➕ Add", disabled=not can_add, key=f"add_{photo['id']}"):
+                                        add_annotation_to_photo(
+                                            photo['id'],
+                                            session_name,
+                                            annotation_type,
+                                            annotation_color,
+                                            stroke_width,
+                                            annotation_text,
+                                            position
+                                        )
+                                        st.success("✅ Annotation added!")
+                                        st.rerun()
+                                
+                                with col_reset:
+                                    if st.button("🔄 Reset", key=f"reset_{photo['id']}"):
+                                        reset_photo_annotations(photo['id'], session_name)
+                                        st.success("Annotations cleared!")
                                         st.rerun()
                                 
                                 st.divider()
@@ -789,4 +682,4 @@ with tab2:
 
 # Footer
 st.markdown("---")
-st.caption("Fieldmap v1.0 - Biomedical Engineering Lab Documentation System")
+st.caption("Fieldmap v2.0 - Biomedical Engineering Lab Documentation System")
