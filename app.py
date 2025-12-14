@@ -5,11 +5,12 @@ A Streamlit-based mobile web app for biomedical engineers to capture, annotate, 
 
 import streamlit as st
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageDraw
 import io
 from datetime import datetime
 from streamlit_drawable_canvas import st_canvas
 import hashlib
+import numpy as np
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -60,6 +61,122 @@ if 'current_session' not in st.session_state:
 if 'photo_counter' not in st.session_state:
     st.session_state.photo_counter = 0
 
+def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
+    """
+    Render canvas drawing data onto a PIL Image.
+    
+    Args:
+        image: PIL Image object (original image)
+        drawing_data: JSON data from streamlit_drawable_canvas
+        canvas_width: Width of the canvas used for drawing
+        canvas_height: Height of the canvas used for drawing
+    
+    Returns:
+        PIL Image with drawings overlaid
+    """
+    if drawing_data is None or 'objects' not in drawing_data:
+        return image.copy()
+    
+    # Create a copy of the original image
+    img_copy = image.copy()
+    
+    # Get original image dimensions
+    img_width, img_height = image.size
+    
+    # Calculate scaling factors (canvas may be scaled differently from original image)
+    scale_x = img_width / canvas_width
+    scale_y = img_height / canvas_height
+    
+    # Create a transparent overlay for drawings
+    overlay = Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    
+    # Process each drawing object
+    for obj in drawing_data['objects']:
+        obj_type = obj.get('type')
+        stroke = obj.get('stroke', '#FF0000')
+        stroke_width = int(obj.get('strokeWidth', 3) * max(scale_x, scale_y))
+        
+        # Parse stroke color (handle hex colors)
+        if stroke.startswith('#'):
+            stroke_color = stroke
+        else:
+            stroke_color = '#FF0000'  # Default to red
+        
+        if obj_type == 'path':
+            # Freehand drawing
+            path = obj.get('path', [])
+            if len(path) > 1:
+                points = []
+                for segment in path:
+                    if len(segment) >= 3:
+                        x = segment[1] * scale_x
+                        y = segment[2] * scale_y
+                        points.append((x, y))
+                
+                if len(points) > 1:
+                    draw.line(points, fill=stroke_color, width=stroke_width, joint='curve')
+        
+        elif obj_type == 'line':
+            # Line/Arrow
+            x1 = obj.get('x1', 0) * scale_x
+            y1 = obj.get('y1', 0) * scale_y
+            x2 = obj.get('x2', 0) * scale_x
+            y2 = obj.get('y2', 0) * scale_y
+            draw.line([(x1, y1), (x2, y2)], fill=stroke_color, width=stroke_width)
+        
+        elif obj_type == 'rect':
+            # Rectangle
+            left = obj.get('left', 0) * scale_x
+            top = obj.get('top', 0) * scale_y
+            width = obj.get('width', 0) * scale_x
+            height = obj.get('height', 0) * scale_y
+            
+            x1, y1 = left, top
+            x2, y2 = left + width, top + height
+            
+            fill_color = obj.get('fill')
+            if fill_color and fill_color != 'transparent':
+                # Draw filled rectangle
+                draw.rectangle([x1, y1, x2, y2], outline=stroke_color, fill=fill_color, width=stroke_width)
+            else:
+                # Draw outline only
+                draw.rectangle([x1, y1, x2, y2], outline=stroke_color, width=stroke_width)
+        
+        elif obj_type == 'circle':
+            # Circle
+            left = obj.get('left', 0) * scale_x
+            top = obj.get('top', 0) * scale_y
+            radius = obj.get('radius', 0) * max(scale_x, scale_y)
+            
+            x1 = left - radius
+            y1 = top - radius
+            x2 = left + radius
+            y2 = top + radius
+            
+            fill_color = obj.get('fill')
+            if fill_color and fill_color != 'transparent':
+                # Draw filled circle
+                draw.ellipse([x1, y1, x2, y2], outline=stroke_color, fill=fill_color, width=stroke_width)
+            else:
+                # Draw outline only
+                draw.ellipse([x1, y1, x2, y2], outline=stroke_color, width=stroke_width)
+    
+    # Convert original image to RGBA if needed
+    if img_copy.mode != 'RGBA':
+        img_copy = img_copy.convert('RGBA')
+    
+    # Composite the overlay onto the image
+    result = Image.alpha_composite(img_copy, overlay)
+    
+    # Convert back to RGB
+    if result.mode == 'RGBA':
+        rgb_result = Image.new('RGB', result.size, (255, 255, 255))
+        rgb_result.paste(result, mask=result.split()[3])
+        return rgb_result
+    
+    return result
+
 def create_new_session(session_name):
     """Create a new session"""
     if session_name and session_name not in st.session_state.sessions:
@@ -73,6 +190,7 @@ def add_photo_to_session(image, session_name, comment=""):
     photo_data = {
         'id': st.session_state.photo_counter,
         'image': image,
+        'annotated_image': None,  # Store image with drawings overlaid
         'comment': comment,
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'drawing_data': None  # Store drawing annotations
@@ -110,12 +228,26 @@ def update_photo_comment(photo_id, session_name, new_comment):
                 return True
     return False
 
-def update_photo_drawing(photo_id, session_name, drawing_data):
-    """Update the drawing annotation for a photo"""
+def update_photo_drawing(photo_id, session_name, drawing_data, canvas_width=None, canvas_height=None):
+    """Update the drawing annotation for a photo and create annotated image"""
     if session_name in st.session_state.sessions:
         for photo in st.session_state.sessions[session_name]:
             if photo['id'] == photo_id:
                 photo['drawing_data'] = drawing_data
+                
+                # If drawing data exists and canvas dimensions provided, create annotated image
+                if drawing_data is not None and canvas_width is not None and canvas_height is not None:
+                    annotated_img = render_drawing_on_image(
+                        photo['image'], 
+                        drawing_data, 
+                        canvas_width, 
+                        canvas_height
+                    )
+                    photo['annotated_image'] = annotated_img
+                else:
+                    # Clear annotated image if no drawing
+                    photo['annotated_image'] = None
+                
                 return True
     return False
 
@@ -125,12 +257,14 @@ def export_to_excel():
     for session_name, photos in st.session_state.sessions.items():
         for photo in photos:
             has_drawing = photo.get('drawing_data') is not None
+            has_annotated_image = photo.get('annotated_image') is not None
             data.append({
                 'Session': session_name,
                 'Photo ID': photo['id'],
                 'Timestamp': photo['timestamp'],
                 'Comment': photo['comment'],
-                'Has Drawing': 'Yes' if has_drawing else 'No'
+                'Has Drawing': 'Yes' if has_drawing else 'No',
+                'Annotated Image Saved': 'Yes' if has_annotated_image else 'No'
             })
     
     if data:
@@ -243,7 +377,6 @@ with tab1:
         
         # Show preview with annotation options
         st.subheader("📸 Preview & Annotate")
-        st.image(image, caption="Photo Preview", use_column_width=True)
         
         # Get the saved photo data
         saved_photo = None
@@ -252,6 +385,30 @@ with tab1:
                 if photo['id'] == st.session_state.last_saved_photo_id:
                     saved_photo = photo
                     break
+        
+        # Show original image and annotated if exists
+        if saved_photo and saved_photo.get('annotated_image') is not None:
+            col_orig, col_annot = st.columns(2)
+            with col_orig:
+                st.markdown("**Original:**")
+                st.image(image, use_column_width=True)
+            with col_annot:
+                st.markdown("**📝 With Drawings:**")
+                st.image(saved_photo['annotated_image'], use_column_width=True)
+            
+            # Download button for annotated image
+            buf = io.BytesIO()
+            saved_photo['annotated_image'].save(buf, format='PNG')
+            buf.seek(0)
+            st.download_button(
+                label="📥 Download Annotated Image",
+                data=buf,
+                file_name=f"annotated_photo_{saved_photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                mime="image/png",
+                key="download_preview_annotated"
+            )
+        else:
+            st.image(image, caption="Photo Preview", use_column_width=True)
         
         if saved_photo:
             # Immediate annotation options
@@ -332,8 +489,14 @@ with tab1:
             with col_save:
                 if st.button("💾 Save Drawing", key="preview_save_drawing"):
                     if canvas_result is not None and canvas_result.json_data is not None:
-                        update_photo_drawing(saved_photo['id'], st.session_state.current_session, canvas_result.json_data)
-                        st.success("Drawing saved!")
+                        update_photo_drawing(
+                            saved_photo['id'], 
+                            st.session_state.current_session, 
+                            canvas_result.json_data,
+                            canvas_width,
+                            canvas_height
+                        )
+                        st.success("✅ Drawing saved and overlaid on image!")
                         st.rerun()
             with col_clear:
                 if st.button("🗑️ Clear Drawing", key="preview_clear_drawing"):
@@ -437,8 +600,28 @@ with tab2:
                                 
                                 st.markdown("---")
                                 
-                                # Show full image
-                                st.image(photo['image'], use_column_width=True)
+                                # Show original and annotated images
+                                if photo.get('annotated_image') is not None:
+                                    st.markdown("**Original Image:**")
+                                    st.image(photo['image'], use_column_width=True)
+                                    
+                                    st.markdown("**📝 Annotated Image (with drawings):**")
+                                    st.image(photo['annotated_image'], use_column_width=True)
+                                    
+                                    # Download annotated image button
+                                    buf = io.BytesIO()
+                                    photo['annotated_image'].save(buf, format='PNG')
+                                    buf.seek(0)
+                                    st.download_button(
+                                        label="📥 Download Annotated Image",
+                                        data=buf,
+                                        file_name=f"annotated_photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                        mime="image/png",
+                                        key=f"download_annotated_{photo['id']}"
+                                    )
+                                else:
+                                    st.markdown("**Image:**")
+                                    st.image(photo['image'], use_column_width=True)
                                 
                                 # Metadata
                                 st.caption(f"**Session:** {session_name}")
@@ -526,8 +709,14 @@ with tab2:
                                 with col_save:
                                     if st.button("💾 Save Drawing", key=f"save_drawing_{photo['id']}"):
                                         if canvas_result is not None and canvas_result.json_data is not None:
-                                            update_photo_drawing(photo['id'], session_name, canvas_result.json_data)
-                                            st.success("Drawing saved!")
+                                            update_photo_drawing(
+                                                photo['id'], 
+                                                session_name, 
+                                                canvas_result.json_data,
+                                                canvas_width,
+                                                canvas_height
+                                            )
+                                            st.success("✅ Drawing saved and overlaid on image!")
                                             st.rerun()
                                 with col_clear:
                                     if st.button("🗑️ Clear Drawing", key=f"clear_drawing_{photo['id']}"):
