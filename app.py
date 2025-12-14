@@ -123,6 +123,10 @@ def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
     if drawing_data is None or 'objects' not in drawing_data:
         return image.copy()
     
+    # Validate canvas dimensions to prevent division by zero
+    if canvas_width <= 0 or canvas_height <= 0:
+        return image.copy()
+    
     # Create a copy of the original image
     img_copy = image.copy()
     
@@ -137,11 +141,15 @@ def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
     overlay = Image.new('RGBA', (img_width, img_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     
+    # Path segment indices for clarity
+    PATH_CMD, PATH_X, PATH_Y = 0, 1, 2
+    
     # Process each drawing object
     for obj in drawing_data['objects']:
         obj_type = obj.get('type')
         stroke = obj.get('stroke', '#FF0000')
-        stroke_width = int(obj.get('strokeWidth', 3) * max(scale_x, scale_y))
+        # Ensure stroke width is at least 1 pixel
+        stroke_width = max(1, int(obj.get('strokeWidth', 3) * max(scale_x, scale_y)))
         
         # Parse stroke color
         stroke_color = parse_color(stroke)
@@ -155,12 +163,13 @@ def render_drawing_on_image(image, drawing_data, canvas_width, canvas_height):
                 points = []
                 for segment in path:
                     if len(segment) >= 3:
-                        x = segment[1] * scale_x
-                        y = segment[2] * scale_y
+                        x = segment[PATH_X] * scale_x
+                        y = segment[PATH_Y] * scale_y
                         points.append((x, y))
                 
                 if len(points) > 1:
-                    draw.line(points, fill=stroke_color, width=stroke_width, joint='curve')
+                    # Note: PIL's line() doesn't support 'joint' parameter
+                    draw.line(points, fill=stroke_color, width=stroke_width)
         
         elif obj_type == 'line':
             # Line/Arrow
