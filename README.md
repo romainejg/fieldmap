@@ -13,9 +13,15 @@ A mobile-optimized Streamlit web application designed for biomedical engineers w
 ### 📝 Comments & Drawing
 - Add descriptive notes/comments to each photo
 - Edit comments at any time
-- **Draw on photos** with circles, arrows, rectangles, and freehand drawing
+- **Draw directly on photos** with simple annotation tools:
+  - ↗️ Arrows for pointing
+  - ⭕ Circles for highlighting areas
+  - ⬜ Boxes for marking regions
+  - 📝 Text labels for notes
 - Customize drawing color and line width
-- Save and clear drawing annotations
+- Position control slider for precise placement
+- Reset button to remove all annotations and restore original
+- Annotations are permanently applied to the image
 
 ### 🗂️ Session Management
 - Create multiple sessions for different experiments or procedures
@@ -97,8 +103,11 @@ The app is designed with mobile-first principles:
 - **Click "Clear Camera - Take Another Photo"** to take a new photo
 - **Immediately add notes or draw** on the preview:
   - Add or edit comments/notes
-  - Draw with various tools (freehand, arrows, boxes, circles)
+  - Add annotations: arrows, circles, boxes, or text labels
   - Choose colors and line widths
+  - Use position slider to place annotations
+  - Click "Add Annotation" to apply (builds up multiple annotations)
+  - Use "Reset All Annotations" to restore original photo
   - Move photo to a different session if needed
 
 ### 3. View and Manage Photos
@@ -109,10 +118,12 @@ The app is designed with mobile-first principles:
   - Use **Quick Move dropdown** to reorganize between sessions
   - **Click "View/Edit"** to expand full details
   - View the full image and metadata
+  - Compare original vs annotated versions side-by-side
   - Edit the notes/comments
-  - **Draw on photos** with various tools (circles, arrows, rectangles, freehand)
+  - **Add annotations** directly on photos (arrows, circles, boxes, text)
   - Customize drawing colors and line widths
-  - Save or clear drawing annotations
+  - Reset to remove all annotations and restore original
+  - Delete the photo
   - Delete the photo
 
 ### 4. Export Data
@@ -134,10 +145,9 @@ fieldmap/
 ## Dependencies
 
 - **streamlit**: Web application framework
-- **Pillow**: Image processing
+- **Pillow**: Image processing and annotation
 - **pandas**: Data manipulation
 - **openpyxl**: Excel file creation
-- **streamlit-drawable-canvas**: For potential drawing features
 
 ## Mobile Usage Tips
 
@@ -163,7 +173,8 @@ Potential features for future versions:
 - Cloud storage integration
 - PDF report generation
 - Image metadata extraction
-- Export drawings as overlaid images
+- More advanced annotation tools (freehand drawing, polygons)
+- Batch annotation operations
 
 ## Troubleshooting
 
