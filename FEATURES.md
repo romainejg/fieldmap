@@ -97,13 +97,14 @@
 
 ### 3. Photo Organization
 - **Gallery View**: Browse all photos or filter by session
-- **Quick Move**: Easily reorganize photos between sessions with dedicated controls
-- **Click for Details**: View full details and manage each photo
+- **iPhone-style Grid**: Compact 3-column thumbnail layout
+- **Quick Move**: Dropdown to easily reorganize photos between sessions
+- **Click to Expand**: View full details and manage each photo
 - **Delete Photos**: Remove unwanted images
 
 ### 4. Annotations
 - **Comments**: Add descriptive text to each photo
-- **Multiple Annotations**: Add timestamped notes
+- **Drawing Tools**: Draw on photos with various tools
 - **Edit Anytime**: Update comments as needed
 
 ### 5. Data Export
@@ -142,7 +143,7 @@
 
 3. **Annotate**
    ```
-   Gallery Tab → Select Photo → Add Annotations → Update
+   Gallery Tab → Click View/Edit → Add Comments → Draw on Photo → Update
    ```
 
 4. **Export**
@@ -156,16 +157,16 @@ Each photo contains:
 - Unique ID
 - Image data
 - Timestamp (creation time)
-- Comment (description)
-- Annotations (list with timestamps)
+- Comment (notes/description)
+- Drawing data (canvas annotations)
 - Session (organizational category)
 
 ## Excel Export Format
 
-| Session | Photo ID | Timestamp | Comment | Annotations | Annotation Count |
-|---------|----------|-----------|---------|-------------|------------------|
-| Default | 1 | 2024-... | Test | Note 1 (time) | 1 |
-| Proc_A  | 2 | 2024-... | Sample | Note 2; Note 3 | 2 |
+| Session | Photo ID | Timestamp | Comment | Has Drawing |
+|---------|----------|-----------|---------|-------------|
+| Default | 1 | 2024-... | Test notes | Yes |
+| Proc_A  | 2 | 2024-... | Sample description | No |
 
 ## Technical Details
 

@@ -10,9 +10,8 @@ A mobile-optimized Streamlit web application designed for biomedical engineers w
 - **Automatic save** to current session - no save button needed!
 - Immediate preview with annotation options
 
-### 📝 Annotation & Comments
-- Add descriptive comments to each photo
-- Add multiple annotations with timestamps
+### 📝 Comments & Drawing
+- Add descriptive notes/comments to each photo
 - Edit comments at any time
 - **Draw on photos** with circles, arrows, rectangles, and freehand drawing
 - Customize drawing color and line width
@@ -26,12 +25,14 @@ A mobile-optimized Streamlit web application designed for biomedical engineers w
 
 ### 🖼️ Gallery View
 - Browse all photos or filter by session
-- View photos in a mobile-friendly grid layout
-- Manage photos: edit, move, delete
+- **iPhone-style thumbnail grid** for easy browsing
+- **Quick move** dropdown to reorganize photos between sessions
+- Click to view/edit full photo details
+- Manage photos: edit comments, draw, move, delete
 
 ### 📊 Excel Export
-- Export all photos, comments, and annotations to Excel
-- Includes session information, timestamps, and annotation counts
+- Export all photos, comments, and drawing status to Excel
+- Includes session information and timestamps
 - Easy data analysis and record-keeping
 
 ## Installation
@@ -93,9 +94,9 @@ The app is designed with mobile-first principles:
 - Use "Take a photo" to capture with your camera
 - OR use "Upload from Device" to select existing images
 - **Photo saves automatically** to the current session
-- **Immediately annotate or draw** on the preview:
-  - Add or edit comments
-  - Add quick annotations
+- **Click "Clear Camera - Take Another Photo"** to take a new photo
+- **Immediately add notes or draw** on the preview:
+  - Add or edit comments/notes
   - Draw with various tools (freehand, arrows, boxes, circles)
   - Choose colors and line widths
   - Move photo to a different session if needed
@@ -103,13 +104,12 @@ The app is designed with mobile-first principles:
 ### 3. View and Manage Photos
 - Go to the "Gallery" tab
 - Filter by session or view all photos
-- See photo count, annotations, and drawing status at a glance
+- Browse photos in a **compact 3-column thumbnail grid**
 - For each photo, you can:
-  - **Click "View Details"** for full information
-  - **Quick Move** to organize photos between sessions
-  - View the image and metadata
-  - Edit the comment
-  - Add text annotations
+  - Use **Quick Move dropdown** to reorganize between sessions
+  - **Click "View/Edit"** to expand full details
+  - View the full image and metadata
+  - Edit the notes/comments
   - **Draw on photos** with various tools (circles, arrows, rectangles, freehand)
   - Customize drawing colors and line widths
   - Save or clear drawing annotations
@@ -119,7 +119,7 @@ The app is designed with mobile-first principles:
 - Open the sidebar
 - Click "Export to Excel"
 - Click "Download Excel File"
-- The Excel file contains all photos' metadata, comments, and annotations
+- The Excel file contains all photos' metadata, comments, and drawing status
 
 ## File Structure
 

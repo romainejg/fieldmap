@@ -21,15 +21,14 @@ Successfully implemented a complete mobile-optimized Streamlit web application f
 
 3. **Annotation & Comments**
    - Add comments to each photo
-   - Multiple annotations per photo with timestamps
+   - Drawing tools for visual annotations
    - Edit comments at any time
-   - View annotation history
 
 4. **Gallery View**
    - Browse all photos or filter by session
-   - Mobile-friendly card layout with photo counts and status
-   - **Quick move** functionality for easy reorganization
-   - **Click-to-view** details for comprehensive photo management
+   - **iPhone-style 3-column thumbnail grid layout**
+   - **Quick move dropdown** for easy reorganization
+   - **Click-to-expand** details for comprehensive photo management
    - Complete photo management (view, edit, move, delete)
 
 5. **Excel Export**
