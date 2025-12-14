@@ -124,7 +124,6 @@ The app is designed with mobile-first principles:
   - Customize drawing colors and line widths
   - Reset to remove all annotations and restore original
   - Delete the photo
-  - Delete the photo
 
 ### 4. Export Data
 - Open the sidebar

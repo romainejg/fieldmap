@@ -70,7 +70,7 @@ def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="
         color: Color in hex format (e.g., '#FF0000')
         stroke_width: Width of the stroke
         text: Text to add (for text annotations)
-        position_percent: Position on image (0.0 to 1.0) - used for simple placement
+        position_percent: Horizontal position on image (0.0=left to 1.0=right)
     
     Returns:
         PIL Image with annotation drawn
@@ -83,12 +83,12 @@ def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="
     draw = ImageDraw.Draw(img_copy)
     width, height = img_copy.size
     
-    # Calculate position based on percentage
+    # Calculate horizontal position based on percentage, vertical is centered
     center_x = int(width * position_percent)
-    center_y = int(height * position_percent)
+    center_y = int(height * 0.5)  # Always center vertically
     
     if annotation_type == 'arrow':
-        # Draw a simple arrow pointing down
+        # Draw a simple arrow pointing down, centered at position
         start_x, start_y = center_x, int(height * 0.2)
         end_x, end_y = center_x, int(height * 0.4)
         
@@ -104,7 +104,7 @@ def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="
         ], fill=color)
     
     elif annotation_type == 'circle':
-        # Draw a circle in the center-ish area
+        # Draw a circle centered at position
         radius = min(width, height) // 8
         draw.ellipse([
             center_x - radius, center_y - radius,
@@ -112,7 +112,7 @@ def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="
         ], outline=color, width=stroke_width)
     
     elif annotation_type == 'box':
-        # Draw a rectangle in the center area
+        # Draw a rectangle centered at position
         box_size = min(width, height) // 6
         draw.rectangle([
             center_x - box_size, center_y - box_size,
@@ -121,11 +121,26 @@ def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="
     
     elif annotation_type == 'text' and text:
         # Draw text annotation
-        try:
-            # Try to use a larger font
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", size=max(20, width // 30))
-        except:
-            # Fallback to default font
+        # Try multiple common font paths for cross-platform compatibility
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
+            "/System/Library/Fonts/Helvetica.ttc",  # macOS
+            "C:\\Windows\\Fonts\\arial.ttf",  # Windows
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"  # Alternative Linux
+        ]
+        
+        font = None
+        font_size = max(20, width // 30)
+        
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, size=font_size)
+                break
+            except (IOError, OSError):
+                continue
+        
+        # Fallback to default font if none found
+        if font is None:
             font = ImageFont.load_default()
         
         # Draw text with background for visibility
