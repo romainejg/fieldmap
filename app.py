@@ -705,8 +705,6 @@ class GalleryPage(BasePage):
                 st.session_state['selected_photo_session'] = None
                 st.success("Photo deleted!")
                 st.rerun()
-                    st.session_state[f'expand_photo_{photo['id']}'] = False
-                    st.rerun()
 
 
 class AboutPage(BasePage):
