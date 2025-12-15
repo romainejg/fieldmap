@@ -368,52 +368,33 @@ class FieldmapPage(BasePage):
                 
                 # Photo editor section
                 st.markdown("#### Edit Photo")
+                st.info("Use the annotation tools below. Click Save to apply changes or Cancel to discard.")
                 
-                # Initialize show_editor state if not present
-                if 'show_editor' not in st.session_state:
-                    st.session_state.show_editor = False
+                # Call the photo editor component automatically
+                editor_result = photo_editor(
+                    image=last_photo['current_image'],
+                    key=f"photo_editor_{last_photo['id']}"
+                )
                 
-                # Show current photo preview
-                st.image(last_photo['current_image'], caption="Current Photo", use_column_width=True)
-                
-                # Edit photo button
-                if st.button("Edit Photo", key="edit_photo_btn", type="primary"):
-                    st.session_state.show_editor = True
-                    st.rerun()
-                
-                # Display photo editor component when requested
-                if st.session_state.show_editor:
-                    st.info("Use the annotation tools below. Click Save to apply changes or Cancel to discard.")
-                    
-                    # Call the photo editor component
-                    editor_result = photo_editor(
-                        image=last_photo['current_image'],
-                        key=f"photo_editor_{last_photo['id']}"
-                    )
-                    
-                    # Handle editor result
-                    if editor_result is not None:
-                        if editor_result.get('saved') and editor_result.get('pngDataUrl'):
-                            # Decode the edited image
-                            try:
-                                edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
-                                
-                                # Update the photo
-                                last_photo['current_image'] = edited_image
-                                last_photo['has_annotations'] = True
-                                
-                                # Reset editor state
-                                st.session_state.show_editor = False
-                                
-                                st.success("Photo updated with annotations!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error processing edited image: {str(e)}")
-                        elif editor_result.get('cancelled'):
-                            # User cancelled editing
-                            st.session_state.show_editor = False
-                            st.info("Editing cancelled")
+                # Handle editor result
+                if editor_result is not None:
+                    if editor_result.get('saved') and editor_result.get('pngDataUrl'):
+                        # Decode the edited image
+                        try:
+                            edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
+                            
+                            # Update the photo
+                            last_photo['current_image'] = edited_image
+                            last_photo['has_annotations'] = True
+                            
+                            st.success("Photo updated with annotations!")
                             st.rerun()
+                        except Exception as e:
+                            st.error(f"Error processing edited image: {str(e)}")
+                    elif editor_result.get('cancelled'):
+                        # User cancelled editing
+                        st.info("Editing cancelled")
+                        st.rerun()
 
 
 class GalleryPage(BasePage):
