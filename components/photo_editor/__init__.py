@@ -55,7 +55,8 @@ def photo_editor(image, key=None):
     component_value = _component_func(
         image_data=image_data,
         key=key,
-        default=None
+        default=None,
+        height=750
     )
     
     return component_value

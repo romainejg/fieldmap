@@ -37,7 +37,7 @@
 </head>
 <body>
     <div id="container">
-        <img id="targetImage" alt="Photo to edit" style="display: none;" />
+        <img id="targetImage" alt="Photo to edit" />
         <div class="loading" id="loadingText">Loading editor...</div>
     </div>
 
@@ -62,14 +62,15 @@
             targetImage.onload = function() {
                 imageLoaded = true;
                 console.log('Image loaded successfully');
-                Streamlit.setFrameHeight();
+                
+                const h = Math.max(600, targetImage.getBoundingClientRect().height + 80);
+                Streamlit.setFrameHeight(h);
                 
                 // Automatically open the marker.js editor after a brief delay
                 // to ensure all resources are ready
-                const AUTO_OPEN_DELAY_MS = 300;
                 setTimeout(() => {
                     showMarkerArea();
-                }, AUTO_OPEN_DELAY_MS);
+                }, 300);
             };
             
             targetImage.onerror = function() {
@@ -127,6 +128,11 @@
             // Handle close without saving
             markerArea.addEventListener('close', () => {
                 loadingText.classList.remove('active');
+                Streamlit.setComponentValue({
+                    cancelled: true,
+                    saved: false,
+                    pngDataUrl: null
+                });
             });
             
             // Show the marker area
