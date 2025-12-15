@@ -1134,17 +1134,20 @@ class AboutPage(BasePage):
         col_left, col_right = st.columns([1.2, 1])
         
         with col_left:
-            st.markdown('<div class="hero-title">Fieldmap</div>', unsafe_allow_html=True)
-            st.markdown('<div class="hero-subtitle">Documentation support for the cadaver lab</div>', unsafe_allow_html=True)
+            # Greeting headline
+            st.markdown('<div style="font-size: 1.5rem; color: #666; margin-bottom: 0.5rem;">Hello.</div>', unsafe_allow_html=True)
             
-            # Concise feature list
+            # Main headline
+            st.markdown('<div class="hero-title">Welcome to Fieldmap</div>', unsafe_allow_html=True)
+            
+            # Concise feature list (3-5 bullets)
             st.markdown("""
             <div class="feature-list">
             <ul style="list-style-type: none; padding-left: 0;">
-                <li>Capture and organize cadaver lab photos</li>
-                <li>Annotate with freehand, arrows, and outline shapes</li>
-                <li>Sessions behave like albums</li>
-                <li>Stored and synced in Google Drive</li>
+                <li>📸 Capture and organize cadaver lab photos</li>
+                <li>✏️ Annotate with drawings, arrows, and shapes</li>
+                <li>📁 Organize in sessions (albums)</li>
+                <li>☁️ Auto-sync to Google Drive</li>
             </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -1154,13 +1157,22 @@ class AboutPage(BasePage):
             
             # Check if we're handling OAuth callback
             query_params = st.query_params
-            if 'code' in query_params and 'state' in query_params:
+            
+            # Handle OAuth error from Google
+            if 'error' in query_params:
+                error_code = query_params.get('error', 'unknown')
+                error_desc = query_params.get('error_description', 'No description provided')
+                st.error(f"❌ OAuth Error: {error_code}")
+                st.caption(f"Details: {error_desc}")
+                st.query_params.clear()
+                st.button("Try Again", key="retry_oauth", type="primary")
+            elif 'code' in query_params and 'state' in query_params:
                 # Handle OAuth callback with state validation for CSRF protection
                 expected_state = st.session_state.get('oauth_state')
                 received_state = query_params['state']
                 
                 if not expected_state or expected_state != received_state:
-                    st.error("Invalid OAuth state. Possible CSRF attack detected. Please try again.")
+                    st.error("❌ Invalid OAuth state. Possible CSRF attack detected. Please try again.")
                     st.query_params.clear()
                     if 'oauth_state' in st.session_state:
                         del st.session_state.oauth_state
@@ -1173,16 +1185,33 @@ class AboutPage(BasePage):
                     auth_response_url = f"{redirect_uri}?{urlencode(params)}"
                     
                     with st.spinner("Completing sign-in..."):
-                        if self.google_auth.handle_oauth_callback(auth_response_url):
-                            st.session_state.google_authed = True
-                            st.session_state.google_user_email = self.google_auth.get_user_email()
-                            # Clear query params and state
-                            st.query_params.clear()
-                            if 'oauth_state' in st.session_state:
-                                del st.session_state.oauth_state
-                            st.rerun()
-                        else:
-                            st.error("Authentication failed. Please try again.")
+                        try:
+                            if self.google_auth.handle_oauth_callback(auth_response_url):
+                                st.session_state.google_authed = True
+                                st.session_state.google_user_email = self.google_auth.get_user_email()
+                                # Clear query params and state
+                                st.query_params.clear()
+                                if 'oauth_state' in st.session_state:
+                                    del st.session_state.oauth_state
+                                st.success("✅ Successfully signed in!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Authentication failed. Please check the debug info below and try again.")
+                                st.query_params.clear()
+                                if 'oauth_state' in st.session_state:
+                                    del st.session_state.oauth_state
+                        except Exception as e:
+                            error_msg = str(e)
+                            st.error(f"❌ Authentication error: {error_msg}")
+                            
+                            # Provide specific guidance for common errors
+                            if "redirect_uri_mismatch" in error_msg.lower():
+                                st.warning("**Redirect URI mismatch**: The redirect URI in your Google Cloud Console doesn't match the computed URI. See debug info below.")
+                            elif "invalid_client" in error_msg.lower():
+                                st.warning("**Invalid client**: Check that your OAuth client credentials are correct.")
+                            elif "unauthorized_client" in error_msg.lower():
+                                st.warning("**Unauthorized client**: Ensure your app is published or you're added as a test user in the OAuth consent screen.")
+                            
                             st.query_params.clear()
                             if 'oauth_state' in st.session_state:
                                 del st.session_state.oauth_state
@@ -1195,21 +1224,24 @@ class AboutPage(BasePage):
                 with st.expander("Setup Instructions"):
                     st.markdown("""
                     **Required secrets:**
-                    - `GOOGLE_OAUTH_CLIENT_JSON` - OAuth client credentials
+                    - `GOOGLE_OAUTH_CLIENT_JSON` - OAuth client credentials (Web application type)
                     - `APP_BASE_URL` - App URL (e.g., https://fieldmap.streamlit.app)
+                    
+                    **In Google Cloud Console, add this exact redirect URI:**
+                    - `https://fieldmap.streamlit.app/oauth2callback`
                     
                     See SETUP_GUIDE.md for details.
                     """)
             elif self.google_auth.is_authenticated():
                 # User is authenticated
                 email = self.google_auth.get_user_email()
-                st.markdown("### Signed In")
+                st.markdown("### ✅ Signed In")
                 if email:
                     st.success(f"Signed in as **{email}**")
                 else:
                     st.success("Signed in to Google")
                 
-                st.info("Access Fieldmap and Gallery from the sidebar")
+                st.info("📱 Access Fieldmap and Gallery from the sidebar")
                 
                 if st.button("Sign Out", key="google_signout_about", type="secondary", use_container_width=True):
                     self.google_auth.sign_out()
@@ -1219,7 +1251,7 @@ class AboutPage(BasePage):
             else:
                 # User is not authenticated - show one-click sign-in
                 st.markdown("### Sign In")
-                st.markdown("Sign in with Google to use Fieldmap")
+                st.markdown("Sign in with Google to access Fieldmap")
                 
                 if st.button("Sign in with Google", key="google_signin_about", type="primary", use_container_width=True):
                     auth_url = self.google_auth.get_auth_url()
@@ -1238,6 +1270,31 @@ class AboutPage(BasePage):
                         )
                     else:
                         st.error("Failed to generate authorization URL")
+                
+                # Add guidance about test users
+                st.caption("💡 **Note:** If OAuth consent screen is in Testing mode, ensure your Google account is added as a Test User in Google Cloud Console.")
+                
+                # Debug panel for OAuth troubleshooting
+                with st.expander("🔧 OAuth Debug Info", expanded=False):
+                    st.markdown("**Computed Redirect URI:**")
+                    redirect_uri = self.google_auth._get_redirect_uri()
+                    st.code(redirect_uri)
+                    st.caption("This must match exactly in Google Cloud Console → Authorized redirect URIs")
+                    
+                    st.markdown("**Current Query Parameters:**")
+                    if query_params:
+                        for key, value in query_params.items():
+                            st.text(f"{key}: {value}")
+                    else:
+                        st.text("(none)")
+                    
+                    st.markdown("**OAuth State in Session:**")
+                    oauth_state = st.session_state.get('oauth_state', '(not set)')
+                    st.text(oauth_state)
+                    
+                    st.markdown("**Last Auth Error:**")
+                    last_error = st.session_state.get('last_oauth_error', '(none)')
+                    st.text(last_error)
             
             st.markdown('</div>', unsafe_allow_html=True)
         

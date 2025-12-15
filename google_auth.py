@@ -53,8 +53,8 @@ class GoogleAuthHelper:
         Get the redirect URI dynamically from APP_BASE_URL or fallback to legacy config.
         
         Priority:
-        1. APP_BASE_URL from secrets (recommended for Streamlit Cloud)
-        2. GOOGLE_REDIRECT_URI from secrets (legacy)
+        1. APP_BASE_URL from secrets (recommended for Streamlit Cloud) + /oauth2callback
+        2. GOOGLE_REDIRECT_URI from secrets (legacy, already includes path)
         3. Environment variables
         4. Default to localhost for local dev
         """
@@ -62,16 +62,20 @@ class GoogleAuthHelper:
         try:
             app_base_url = st.secrets.get("APP_BASE_URL")
             if app_base_url:
-                return app_base_url
+                # Remove trailing slash if present, then append /oauth2callback
+                base = app_base_url.rstrip('/')
+                return f"{base}/oauth2callback"
         except Exception:
             pass
         
         # Fallback to APP_BASE_URL from environment
         app_base_url = os.environ.get("APP_BASE_URL")
         if app_base_url:
-            return app_base_url
+            # Remove trailing slash if present, then append /oauth2callback
+            base = app_base_url.rstrip('/')
+            return f"{base}/oauth2callback"
         
-        # Try legacy GOOGLE_REDIRECT_URI from secrets
+        # Try legacy GOOGLE_REDIRECT_URI from secrets (already includes full path)
         try:
             redirect_uri = st.secrets.get("GOOGLE_REDIRECT_URI")
             if redirect_uri:
@@ -85,7 +89,7 @@ class GoogleAuthHelper:
             return redirect_uri
         
         # Default for local development
-        return "http://localhost:8501"
+        return "http://localhost:8501/oauth2callback"
     
     def _get_stored_token(self):
         """Get stored token from session_state."""
@@ -239,7 +243,9 @@ class GoogleAuthHelper:
         try:
             flow = st.session_state.get('oauth_flow')
             if not flow:
-                st.error("OAuth flow not initialized")
+                error_msg = "OAuth flow not initialized"
+                st.session_state.last_oauth_error = error_msg
+                st.error(error_msg)
                 return False
             
             # Exchange authorization code for token
@@ -262,9 +268,15 @@ class GoogleAuthHelper:
             if 'oauth_state' in st.session_state:
                 del st.session_state.oauth_state
             
+            # Clear any previous errors
+            if 'last_oauth_error' in st.session_state:
+                del st.session_state.last_oauth_error
+            
             return True
         except Exception as e:
-            st.error(f"Authentication failed: {str(e)}")
+            error_msg = f"Authentication failed: {str(e)}"
+            st.session_state.last_oauth_error = error_msg
+            st.error(error_msg)
             return False
     
     def sign_out(self):
