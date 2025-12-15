@@ -53,7 +53,8 @@ def test_decode_image_from_dataurl():
 def test_app_structure():
     """Test that app.py has the correct structure"""
     try:
-        with open('/home/runner/work/fieldmap/fieldmap/app.py', 'r') as f:
+        app_path = Path(__file__).parent / 'app.py'
+        with open(app_path, 'r') as f:
             content = f.read()
         
         # Check that the old "Edit Photo" button is removed from the Fieldmap page
@@ -109,7 +110,8 @@ def test_app_structure():
 def test_no_show_editor_state():
     """Test that show_editor state is no longer used in Fieldmap page"""
     try:
-        with open('/home/runner/work/fieldmap/fieldmap/app.py', 'r') as f:
+        app_path = Path(__file__).parent / 'app.py'
+        with open(app_path, 'r') as f:
             content = f.read()
         
         lines = content.split('\n')
