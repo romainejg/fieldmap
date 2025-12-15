@@ -118,9 +118,9 @@ function showMarkerArea() {
         const loadingText = document.getElementById('loadingText');
         loadingText.classList.add('active');
 
-        // Check if image has naturalWidth/naturalHeight
-        if (!targetImage.naturalWidth || !targetImage.naturalHeight) {
-            setStatus("Image not ready: naturalWidth=" + targetImage.naturalWidth + ", naturalHeight=" + targetImage.naturalHeight);
+        // Ensure image is fully ready before initializing MarkerArea
+        if (!targetImage.complete || !targetImage.naturalWidth) {
+            setStatus("Image not ready: complete=" + targetImage.complete + ", naturalWidth=" + targetImage.naturalWidth);
             loadingText.classList.remove('active');
             return;
         }
@@ -140,12 +140,19 @@ function showMarkerArea() {
             setStatus("mj keys sample: " + Object.keys(mj).slice(0, 20).join(","));
         }
 
-        markerArea = new mj.MarkerArea(targetImage);
+        // Wrap MarkerArea construction separately to catch initialization errors
+        try {
+            markerArea = new mj.MarkerArea(targetImage);
+        } catch (constructError) {
+            setStatus(`MarkerArea construction failed: ${constructError.message}`);
+            if (constructError.stack) setStatus(constructError.stack);
+            loadingText.classList.remove('active');
+            return;
+        }
         
         if (DEBUG_MODE) {
+            setStatus("markerArea created successfully");
             setStatus("markerArea keys sample: " + Object.keys(markerArea).slice(0, 30).join(","));
-            setStatus("has availableMarkerTypes: " + ("availableMarkerTypes" in markerArea));
-            setStatus("markerArea.availableMarkerTypes type: " + typeof markerArea.availableMarkerTypes);
         }
 
         // Set display mode - use popup for more reliable initialization
@@ -160,35 +167,6 @@ function showMarkerArea() {
             markerArea.uiStyleSettings.toolbarColor = '#ffffff';
         }
 
-        // Restrict to only outline/unfilled marker types using safe direct assignment
-        // IMPORTANT: Use direct assignment (=) instead of .push() to avoid errors.
-        // If markerArea.availableMarkerTypes is undefined, calling .push() would throw
-        // "Cannot read properties of undefined (reading 'push')".
-        // Direct assignment ensures we create/replace the array safely.
-        const tools = [
-            mj.FreehandMarker,
-            mj.ArrowMarker,
-            mj.LineMarker,
-            mj.TextMarker,
-            mj.EllipseMarker,  // Unfilled circle/ellipse
-            mj.FrameMarker      // Unfilled square/rectangle
-        ].filter(Boolean);
-
-        if (DEBUG_MODE) setStatus("Tools to register: " + tools.length);
-
-        // Only assign if the property exists; otherwise do not touch it
-        // HARD RULE: DO NOT use .push() anywhere
-        if ("availableMarkerTypes" in markerArea) {
-            markerArea.availableMarkerTypes = tools;
-            if (DEBUG_MODE) setStatus("Set markerArea.availableMarkerTypes directly");
-        } else if (markerArea.settings && "availableMarkerTypes" in markerArea.settings) {
-            markerArea.settings.availableMarkerTypes = tools;
-            if (DEBUG_MODE) setStatus("Set markerArea.settings.availableMarkerTypes directly");
-        } else {
-            // Do not attempt to set availableMarkerTypes if API doesn't exist
-            if (DEBUG_MODE) setStatus("No availableMarkerTypes API found; leaving defaults");
-        }
-
         // Track whether save has occurred to prevent double cancel
         let didSave = false;
 
@@ -200,34 +178,100 @@ function showMarkerArea() {
             Streamlit.setFrameHeight();
         }
 
-        // Listen for BOTH render and rendered events (markerjs2 may fire either)
-        markerArea.addEventListener('render', (event) => {
-            loadingText.classList.remove('active');
-            if (DEBUG_MODE) setStatus("render event fired");
-            sendSaved(event.dataUrl);
-        });
+        // Prefer addRenderEventListener and addCloseEventListener (documented API)
+        // These avoid the internal push path that can fail
+        const hasAddRender = typeof markerArea.addRenderEventListener === "function";
+        const hasAddClose = typeof markerArea.addCloseEventListener === "function";
 
-        markerArea.addEventListener('rendered', (event) => {
-            loadingText.classList.remove('active');
-            if (DEBUG_MODE) setStatus("rendered event fired");
-            sendSaved(event.dataUrl);
-        });
+        if (DEBUG_MODE) {
+            setStatus("hasAddRender: " + hasAddRender + ", hasAddClose: " + hasAddClose);
+        }
 
-        markerArea.addEventListener('close', () => {
-            loadingText.classList.remove('active');
-            // Only send cancelled if save didn't happen
-            if (!didSave) {
-                if (DEBUG_MODE) setStatus("close event: no save, sending cancelled");
-                Streamlit.setComponentValue({
-                    cancelled: true,
-                    saved: false,
-                    pngDataUrl: null
+        // Wrap event listener setup separately
+        try {
+            if (hasAddRender) {
+                markerArea.addRenderEventListener((dataUrl) => {
+                    loadingText.classList.remove('active');
+                    if (DEBUG_MODE) setStatus("addRenderEventListener fired");
+                    sendSaved(dataUrl);
                 });
             } else {
-                if (DEBUG_MODE) setStatus("close event: save already sent");
+                // Fallback to addEventListener for render/rendered events
+                markerArea.addEventListener('render', (event) => {
+                    loadingText.classList.remove('active');
+                    if (DEBUG_MODE) setStatus("render event fired");
+                    sendSaved(event.dataUrl);
+                });
+                markerArea.addEventListener('rendered', (event) => {
+                    loadingText.classList.remove('active');
+                    if (DEBUG_MODE) setStatus("rendered event fired");
+                    sendSaved(event.dataUrl);
+                });
             }
-            Streamlit.setFrameHeight();
-        });
+
+            if (hasAddClose) {
+                markerArea.addCloseEventListener(() => {
+                    loadingText.classList.remove('active');
+                    if (!didSave) {
+                        if (DEBUG_MODE) setStatus("addCloseEventListener: no save, sending cancelled");
+                        Streamlit.setComponentValue({
+                            cancelled: true,
+                            saved: false,
+                            pngDataUrl: null
+                        });
+                    } else {
+                        if (DEBUG_MODE) setStatus("addCloseEventListener: save already sent");
+                    }
+                    Streamlit.setFrameHeight();
+                });
+            } else {
+                // Fallback to addEventListener for close event
+                markerArea.addEventListener('close', () => {
+                    loadingText.classList.remove('active');
+                    if (!didSave) {
+                        if (DEBUG_MODE) setStatus("close event: no save, sending cancelled");
+                        Streamlit.setComponentValue({
+                            cancelled: true,
+                            saved: false,
+                            pngDataUrl: null
+                        });
+                    } else {
+                        if (DEBUG_MODE) setStatus("close event: save already sent");
+                    }
+                    Streamlit.setFrameHeight();
+                });
+            }
+        } catch (eventError) {
+            setStatus(`Event listener setup failed: ${eventError.message}`);
+            if (eventError.stack) setStatus(eventError.stack);
+            loadingText.classList.remove('active');
+            return;
+        }
+
+        // Restrict to only outline/unfilled marker types using safe direct assignment
+        // Set this AFTER event hooks to ensure it doesn't interfere with initialization
+        const tools = [
+            mj.FreehandMarker,
+            mj.ArrowMarker,
+            mj.LineMarker,
+            mj.TextMarker,
+            mj.EllipseMarker,  // Unfilled circle/ellipse
+            mj.FrameMarker      // Unfilled square/rectangle
+        ].filter(Boolean);
+
+        if (DEBUG_MODE) setStatus("Tools to register: " + tools.length);
+
+        // Only assign if the property exists; use direct assignment (not .push())
+        if ("availableMarkerTypes" in markerArea) {
+            markerArea.availableMarkerTypes = tools;
+            if (DEBUG_MODE) setStatus("Set markerArea.availableMarkerTypes directly");
+        } else if (markerArea.settings && "availableMarkerTypes" in markerArea.settings) {
+            markerArea.settings.availableMarkerTypes = tools;
+            if (DEBUG_MODE) setStatus("Set markerArea.settings.availableMarkerTypes directly");
+        } else {
+            // Do not attempt to set availableMarkerTypes if API doesn't exist
+            if (DEBUG_MODE) setStatus("No availableMarkerTypes API found; leaving defaults");
+        }
 
         if (DEBUG_MODE) setStatus("About to call markerArea.show()");
         markerArea.show();

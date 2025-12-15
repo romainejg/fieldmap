@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 from PIL import Image
 import io
+import base64
 from datetime import datetime
 from pathlib import Path
 import numpy as np
@@ -426,8 +427,8 @@ class GalleryPage(BasePage):
         self._render_draggable_view()
     
     def _render_draggable_view(self):
-        """Render draggable view with small tiles and click-for-details"""
-        st.info("📱 Drag photos between sessions to organize them. Click a tile to view details.")
+        """Render draggable view with organization board and compact photo selector"""
+        st.info("📱 Drag photos between sessions to organize them.")
         
         # Build the list of containers with items
         sortable_containers = []
@@ -438,7 +439,8 @@ class GalleryPage(BasePage):
             photos = self.session_store.sessions[session_name]
             items = []
             for photo in photos:
-                item_id = f"photo_{photo['id']}"
+                # Use photo ID as label (streamlit-sortables doesn't support HTML in labels)
+                item_id = f"Photo #{photo['id']}"
                 items.append(item_id)
                 original_structure[item_id] = {
                     'photo_id': photo['id'],
@@ -452,7 +454,7 @@ class GalleryPage(BasePage):
                 "items": items
             })
         
-        # Custom CSS for small tiles with thumbnails
+        # Custom CSS for tiles - fixed size, only shadow changes on hover
         custom_style = """
         .sortable-item {
             background-color: #ffffff;
@@ -469,6 +471,7 @@ class GalleryPage(BasePage):
             text-align: center;
             font-size: 12px;
             overflow: hidden;
+            line-height: 84px;
         }
         .sortable-item:hover {
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
@@ -534,41 +537,35 @@ class GalleryPage(BasePage):
                 st.success("✓ Photos reorganized!")
                 st.rerun()
         
-        # Show clickable thumbnails for each session
+        # Compact photo selector for viewing details (integrated with draggable board)
         st.divider()
-        st.markdown("### Photos")
+        st.markdown("**Select a photo to view details**")
         
+        # Render thumbnails in compact collapsible sections per session
         for session_name in sorted(self.session_store.sessions.keys()):
             photos = self.session_store.sessions[session_name]
             if photos:
-                st.markdown(f"**{session_name}** ({len(photos)} photo{'s' if len(photos) != 1 else ''})")
-                
-                # Display photos as small clickable tiles
-                cols_per_row = 6  # More tiles per row since they're smaller
-                for i in range(0, len(photos), cols_per_row):
-                    cols = st.columns(cols_per_row)
-                    for j in range(cols_per_row):
-                        if i + j < len(photos):
-                            photo = photos[i + j]
-                            with cols[j]:
-                                # Use pre-generated thumbnail if available, otherwise create on-the-fly
-                                if 'thumbnail' in photo and photo['thumbnail']:
-                                    thumb = photo['thumbnail']
-                                else:
-                                    # Fallback: create thumbnail for old photos without cached thumbnails
-                                    thumb = photo['current_image'].copy()
-                                    thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                                    # Cache it for next time
-                                    photo['thumbnail'] = thumb
-                                
-                                # Display thumbnail
-                                st.image(thumb, use_column_width=True)
-                                
-                                # Click button to view details
-                                if st.button(f"#{photo['id']}", key=f"view_photo_{photo['id']}", use_container_width=True):
-                                    st.session_state['selected_photo_id'] = photo['id']
-                                    st.session_state['selected_photo_session'] = session_name
-                                    st.rerun()
+                with st.expander(f"{session_name}", expanded=False):
+                    cols_per_row = 6
+                    for i in range(0, len(photos), cols_per_row):
+                        cols = st.columns(cols_per_row)
+                        for j in range(cols_per_row):
+                            if i + j < len(photos):
+                                photo = photos[i + j]
+                                with cols[j]:
+                                    # Use pre-generated thumbnail
+                                    if 'thumbnail' in photo and photo['thumbnail']:
+                                        thumb = photo['thumbnail']
+                                    else:
+                                        thumb = photo['current_image'].copy()
+                                        thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                                        photo['thumbnail'] = thumb
+                                    
+                                    st.image(thumb, use_column_width=True)
+                                    if st.button(f"#{photo['id']}", key=f"select_{photo['id']}", use_container_width=True):
+                                        st.session_state['selected_photo_id'] = photo['id']
+                                        st.session_state['selected_photo_session'] = session_name
+                                        st.rerun()
         
         # Show details panel if a photo is selected
         if 'selected_photo_id' in st.session_state and st.session_state.get('selected_photo_id'):
