@@ -53,13 +53,12 @@ def photo_editor(image, key=None):
     # Create data URL
     image_data = f"data:image/png;base64,{img_base64}"
     
-    # Call the component
+    # Call the component with explicit height to avoid hidden iframe issues
     component_value = _component_func(
         image_data=image_data,
         key=key,
         default=None,
-        height=1000,
-        nonce=str(time.time())
+        height=1000
     )
     
     return component_value
