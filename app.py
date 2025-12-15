@@ -157,8 +157,6 @@ class SessionStore:
             st.session_state.camera_photo_hash = None
         if 'camera_key' not in st.session_state:
             st.session_state.camera_key = 0
-        if 'use_cloud_storage' not in st.session_state:
-            st.session_state.use_cloud_storage = False
     
     @property
     def sessions(self):
@@ -196,11 +194,22 @@ class SessionStore:
         thumbnail = image.copy()
         thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
         
-        # Optionally save to storage backend
+        # Convert thumbnail to base64 data URL for gallery tiles
+        thumb_buffer = io.BytesIO()
+        thumbnail.save(thumb_buffer, format='PNG')
+        thumb_buffer.seek(0)
+        thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+        thumb_data_url = f"data:image/png;base64,{thumb_base64}"
+        
+        # Save to storage backend (Google Drive)
         storage_uri = None
-        if self.storage and st.session_state.get('use_cloud_storage', False):
+        file_id = None
+        if self.storage:
             try:
                 storage_uri = self.storage.save_image(session_name, photo_id, image)
+                # Extract file ID from gdrive:// URI
+                if storage_uri and storage_uri.startswith('gdrive://'):
+                    file_id = storage_uri.replace('gdrive://', '')
             except Exception as e:
                 logger.warning(f"Failed to save to storage: {e}")
         
@@ -209,12 +218,14 @@ class SessionStore:
             'original_image': image.copy(),
             'current_image': image.copy(),
             'thumbnail': thumbnail,  # Pre-generated thumbnail
+            'thumb_data_url': thumb_data_url,  # Base64 for gallery tiles
             'comment': comment,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'has_annotations': False,
             'source_photo_id': None,  # None for original photos
             'variant': 'original',  # "original" or "annotated"
-            'storage_uri': storage_uri  # URI in cloud storage (if any)
+            'storage_uri': storage_uri,  # URI in cloud storage (if any)
+            'file_id': file_id  # Google Drive file ID
         }
         st.session_state.sessions[session_name].append(photo_data)
         return photo_data['id']
@@ -245,15 +256,26 @@ class SessionStore:
         thumbnail = image.copy()
         thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
         
+        # Convert thumbnail to base64 data URL for gallery tiles
+        thumb_buffer = io.BytesIO()
+        thumbnail.save(thumb_buffer, format='PNG')
+        thumb_buffer.seek(0)
+        thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+        thumb_data_url = f"data:image/png;base64,{thumb_base64}"
+        
         # Use base photo's comment if not provided
         if comment is None:
             comment = base_photo['comment']
         
-        # Optionally save to storage backend
+        # Save to storage backend (Google Drive)
         storage_uri = None
-        if self.storage and st.session_state.get('use_cloud_storage', False):
+        file_id = None
+        if self.storage:
             try:
                 storage_uri = self.storage.save_image(session_name, photo_id, image)
+                # Extract file ID from gdrive:// URI
+                if storage_uri and storage_uri.startswith('gdrive://'):
+                    file_id = storage_uri.replace('gdrive://', '')
             except Exception as e:
                 logger.warning(f"Failed to save to storage: {e}")
         
@@ -262,12 +284,14 @@ class SessionStore:
             'original_image': image.copy(),  # For derived photos, this is the annotated version
             'current_image': image.copy(),
             'thumbnail': thumbnail,
+            'thumb_data_url': thumb_data_url,  # Base64 for gallery tiles
             'comment': comment,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'has_annotations': True,  # Derived photos are annotated by definition
             'source_photo_id': base_photo_id,  # Link to original
             'variant': 'annotated',
-            'storage_uri': storage_uri  # URI in cloud storage (if any)
+            'storage_uri': storage_uri,  # URI in cloud storage (if any)
+            'file_id': file_id  # Google Drive file ID
         }
         st.session_state.sessions[session_name].append(photo_data)
         return photo_data['id']
@@ -517,11 +541,38 @@ class GalleryPage(BasePage):
             photos = self.session_store.sessions[session_name]
             items = []
             for photo in photos:
-                # Use photo ID with emoji badge for annotated photos
-                variant_badge = " 📝" if photo.get('variant') == 'annotated' else ""
-                item_id = f"Photo #{photo['id']}{variant_badge}"
-                items.append(item_id)
+                # Generate thumbnail data URL if not already present
+                if 'thumb_data_url' not in photo or not photo['thumb_data_url']:
+                    thumb = photo.get('thumbnail')
+                    if not thumb:
+                        thumb = photo['current_image'].copy()
+                        thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                        photo['thumbnail'] = thumb
+                    
+                    # Convert to data URL
+                    thumb_buffer = io.BytesIO()
+                    thumb.save(thumb_buffer, format='PNG')
+                    thumb_buffer.seek(0)
+                    thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+                    photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
+                
+                # Use HTML with embedded image for the tile
+                variant_badge = "📝 " if photo.get('variant') == 'annotated' else ""
+                # Create HTML item with image
+                item_html = f'''<div style="text-align:center;">
+                    <img src="{photo['thumb_data_url']}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;" />
+                    <div style="font-size:10px;margin-top:2px;">{variant_badge}#{photo['id']}</div>
+                </div>'''
+                
+                item_id = f"photo_{photo['id']}"
+                items.append(item_html)
                 original_structure[item_id] = {
+                    'photo_id': photo['id'],
+                    'session': session_name,
+                    'photo': photo
+                }
+                # Also map by HTML content (streamlit-sortables returns HTML)
+                original_structure[item_html] = {
                     'photo_id': photo['id'],
                     'session': session_name,
                     'photo': photo
@@ -539,7 +590,7 @@ class GalleryPage(BasePage):
             background-color: #ffffff;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
-            padding: 8px;
+            padding: 4px;
             margin: 6px;
             cursor: move;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -616,42 +667,54 @@ class GalleryPage(BasePage):
                 st.success("✓ Photos reorganized!")
                 st.rerun()
         
-        # Clickable thumbnails for selecting photos
+        # Click-to-select interface below the draggable board
         st.divider()
-        st.markdown("**Click a photo to view details:**")
+        st.markdown("**Select a photo to view details:**")
         
-        # Render thumbnails in a grid per session
+        # Create a minimal grid of clickable thumbnails
+        all_photos = []
         for session_name in sorted(self.session_store.sessions.keys()):
-            photos = self.session_store.sessions[session_name]
-            if photos:
-                st.markdown(f"**{session_name}**")
-                cols_per_row = 6
-                for i in range(0, len(photos), cols_per_row):
-                    cols = st.columns(cols_per_row)
-                    for j in range(cols_per_row):
-                        if i + j < len(photos):
-                            photo = photos[i + j]
-                            with cols[j]:
-                                # Use pre-generated thumbnail
-                                if 'thumbnail' in photo and photo['thumbnail']:
-                                    thumb = photo['thumbnail']
-                                else:
+            for photo in self.session_store.sessions[session_name]:
+                all_photos.append((session_name, photo))
+        
+        if all_photos:
+            cols_per_row = 8
+            for i in range(0, len(all_photos), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for j in range(cols_per_row):
+                    if i + j < len(all_photos):
+                        session_name, photo = all_photos[i + j]
+                        with cols[j]:
+                            # Ensure thumbnail data URL exists
+                            if 'thumb_data_url' not in photo or not photo['thumb_data_url']:
+                                thumb = photo.get('thumbnail')
+                                if not thumb:
                                     thumb = photo['current_image'].copy()
                                     thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
                                     photo['thumbnail'] = thumb
                                 
-                                st.image(thumb, use_column_width=True)
-                                
-                                # Add variant badge
-                                variant_badge = "📝" if photo.get('variant') == 'annotated' else ""
-                                button_label = f"{variant_badge}#{photo['id']}" if variant_badge else f"#{photo['id']}"
-                                
-                                if st.button(button_label, key=f"select_{photo['id']}", use_container_width=True):
-                                    st.session_state['gallery_selected'] = {
-                                        'photo_id': photo['id'],
-                                        'session': session_name
-                                    }
-                                    st.rerun()
+                                thumb_buffer = io.BytesIO()
+                                thumb.save(thumb_buffer, format='PNG')
+                                thumb_buffer.seek(0)
+                                thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+                                photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
+                            
+                            # Display thumbnail using markdown with data URL
+                            st.markdown(
+                                f'<img src="{photo["thumb_data_url"]}" style="width:100%;border-radius:4px;cursor:pointer;" />',
+                                unsafe_allow_html=True
+                            )
+                            
+                            # Button to select
+                            variant_badge = "📝" if photo.get('variant') == 'annotated' else ""
+                            button_label = f"{variant_badge}#{photo['id']}" if variant_badge else f"#{photo['id']}"
+                            
+                            if st.button(button_label, key=f"select_{photo['id']}", use_container_width=True):
+                                st.session_state['gallery_selected'] = {
+                                    'photo_id': photo['id'],
+                                    'session': session_name
+                                }
+                                st.rerun()
         
         # Show details panel in expander if a photo is selected
         if st.session_state.get('gallery_selected'):
@@ -837,39 +900,43 @@ class AboutPage(BasePage):
         A mobile-optimized web app for cadaver lab photo documentation and annotation.
         
         **Key Features:**
-        - 📸 Capture and annotate photos with freehand drawing
+        - 📸 Capture and annotate photos with drawing tools
         - 📁 Organize photos into sessions
         - 📝 Create annotated copies (keeps originals unchanged)
-        - ☁️ Optional Google Drive integration for cloud storage
+        - ☁️ Google Drive cloud storage (required)
         - 📊 Export data to Excel
-        - 🔐 Secure Google authentication
+        - 🔐 Secure Google OAuth authentication
+        - 🖼️ Drag-and-drop gallery organization
         
-        **Version:** 3.0
+        **Version:** 4.0
         
         ---
         
-        ### Google Drive Integration
+        ### Google Drive Storage (Required)
         
-        To enable Google Drive storage:
+        Fieldmap uses Google Drive as its exclusive storage backend. All photos are automatically 
+        saved to your Google Drive under `Fieldmap/<SessionName>/`.
         
-        1. **Set up Google Cloud Project:**
-           - Go to [Google Cloud Console](https://console.cloud.google.com/)
-           - Create a new project or select an existing one
-           - Enable Google Drive API
+        **Setup Requirements:**
         
-        2. **Create OAuth2 Credentials:**
-           - Navigate to APIs & Services → Credentials
-           - Create OAuth2 Client ID (Desktop app)
-           - Download credentials as `credentials.json`
+        1. **OAuth Credentials (Web Application)**
+           - Type: Web application (not Desktop)
+           - Credentials stored in GitHub Secrets or Streamlit Cloud Secrets
+           - No credentials.json file in repository
         
-        3. **Place Credentials:**
-           - Put `credentials.json` in the app directory
-           - Click "Sign in with Google" in the sidebar
-           - Authorize the app to access your Google Drive
+        2. **For Streamlit Cloud Deployment:**
+           - Set `GOOGLE_OAUTH_CLIENT_JSON` secret in Streamlit Cloud UI
+           - Set `GOOGLE_REDIRECT_URI` secret (e.g., `https://fieldmap.streamlit.app`)
+           - Sign in with Google using the sidebar button
         
-        4. **Enable Cloud Storage:**
-           - Toggle "Save photos to Google Drive" in the sidebar
-           - Photos will be automatically saved to Fieldmap folder
+        3. **For Local Development:**
+           - Create `.streamlit/secrets.toml` with:
+             ```toml
+             GOOGLE_OAUTH_CLIENT_JSON = '''{"web": {...}}'''
+             GOOGLE_REDIRECT_URI = "http://localhost:8501"
+             ```
+        
+        **See README.md for detailed setup instructions.**
         
         ---
         
@@ -881,9 +948,21 @@ class AboutPage(BasePage):
         - ✅ Annotated copy links back to original
         - ✅ Multiple edits create multiple copies
         - ✅ Easy to track photo provenance
+        - ✅ All versions saved to Google Drive
+        
+        ### Annotation Tools
+        
+        The editor provides several drawing tools:
+        - ✏️ Freehand drawing
+        - ➡️ Arrows
+        - ━ Lines
+        - ⭕ Unfilled circles/ellipses
+        - ▭ Unfilled rectangles
+        - 🔤 Text annotations
         
         This ensures you never lose your original data!
         """)
+
 
 
 
@@ -895,10 +974,11 @@ class App:
         self.google_auth = GoogleAuthHelper()
         
         # Initialize storage backend based on authentication
+        # Google Drive is the ONLY storage option
         storage_backend = None
-        if self.google_auth.is_authenticated() and st.session_state.get('use_cloud_storage', False):
+        if self.google_auth.is_authenticated():
             try:
-                storage_backend = GoogleDriveStorage()
+                storage_backend = GoogleDriveStorage(self.google_auth)
                 logger.info("Google Drive storage initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize Google Drive storage: {e}")
@@ -945,33 +1025,8 @@ class App:
             )
             self.session_store.current_page = selected_page
             
-            # Google authentication UI
+            # Google authentication UI (always shown, storage is Google-only)
             self.google_auth.render_auth_ui()
-            
-            # Cloud storage toggle (only if authenticated)
-            if self.google_auth.is_authenticated():
-                st.sidebar.markdown("---")
-                st.sidebar.markdown("### ☁️ Storage Settings")
-                use_cloud = st.sidebar.checkbox(
-                    "Save photos to Google Drive",
-                    value=st.session_state.get('use_cloud_storage', False),
-                    key="cloud_storage_toggle",
-                    help="When enabled, photos are automatically saved to your Google Drive"
-                )
-                
-                if use_cloud != st.session_state.get('use_cloud_storage', False):
-                    st.session_state.use_cloud_storage = use_cloud
-                    # Reinitialize storage if needed
-                    if use_cloud:
-                        try:
-                            self.session_store.storage = GoogleDriveStorage()
-                            st.sidebar.success("✅ Google Drive enabled")
-                        except Exception as e:
-                            st.sidebar.error(f"Failed to enable Google Drive: {e}")
-                            st.session_state.use_cloud_storage = False
-                    else:
-                        self.session_store.storage = None
-                        st.sidebar.info("💾 Photos stored in memory only")
     
     def run(self):
         """Main application entry point"""

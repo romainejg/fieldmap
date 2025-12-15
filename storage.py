@@ -188,16 +188,14 @@ class GoogleDriveStorage(PhotoStorage):
     Stores photos in user's Google Drive using OAuth2 authentication.
     """
     
-    def __init__(self, credentials_path: str = 'credentials.json', token_path: str = 'token.pickle'):
+    def __init__(self, google_auth_helper):
         """
         Initialize Google Drive storage.
         
         Args:
-            credentials_path: Path to Google OAuth2 credentials JSON file
-            token_path: Path to store/load authentication token
+            google_auth_helper: GoogleAuthHelper instance with valid credentials
         """
-        self.credentials_path = credentials_path
-        self.token_path = token_path
+        self.google_auth = google_auth_helper
         self.service = None
         self.folder_cache = {}  # Cache folder IDs
     
@@ -207,9 +205,6 @@ class GoogleDriveStorage(PhotoStorage):
             return self.service
         
         try:
-            from google.auth.transport.requests import Request
-            from google.oauth2.credentials import Credentials
-            from google_auth_oauthlib.flow import InstalledAppFlow
             from googleapiclient.discovery import build
         except ImportError:
             raise ImportError(
@@ -217,32 +212,9 @@ class GoogleDriveStorage(PhotoStorage):
                 "Install with: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client"
             )
         
-        from storage import GOOGLE_DRIVE_SCOPE
-        SCOPES = [GOOGLE_DRIVE_SCOPE]
-        
-        creds = None
-        # Load token if it exists
-        if os.path.exists(self.token_path):
-            with open(self.token_path, 'rb') as token:
-                creds = pickle.load(token)
-        
-        # If no valid credentials, authenticate
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(self.credentials_path):
-                    raise FileNotFoundError(
-                        f"Credentials file not found at {self.credentials_path}. "
-                        "Download OAuth2 credentials from Google Cloud Console."
-                    )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_path, SCOPES)
-                creds = flow.run_local_server(port=0)
-            
-            # Save the credentials for next run
-            with open(self.token_path, 'wb') as token:
-                pickle.dump(creds, token)
+        creds = self.google_auth.get_credentials()
+        if not creds:
+            raise ValueError("No valid credentials available. Please authenticate first.")
         
         self.service = build('drive', 'v3', credentials=creds)
         return self.service
