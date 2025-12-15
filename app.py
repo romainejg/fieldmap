@@ -140,6 +140,90 @@ class SessionStore:
         """
         self.storage = storage_backend
         self._initialize_state()
+        
+        # Load from Drive index if authenticated and storage available
+        if self.storage and hasattr(self.storage, 'load_index'):
+            try:
+                self._load_from_drive_index()
+            except Exception as e:
+                logger.warning(f"Failed to load from Drive index: {e}")
+    
+    def _load_from_drive_index(self):
+        """Load sessions and photos from Drive index.json"""
+        try:
+            index_data = self.storage.load_index()
+            
+            if index_data.get('sessions'):
+                # Load sessions from index
+                # Note: We store metadata in the index, but actual images are in Drive
+                st.session_state.sessions = {}
+                
+                for session_name, photos_meta in index_data['sessions'].items():
+                    st.session_state.sessions[session_name] = []
+                    
+                    for photo_meta in photos_meta:
+                        # For now, we'll load photos lazily (only when needed)
+                        # Store metadata and file_id, load image on demand
+                        photo_data = {
+                            'id': photo_meta['id'],
+                            'original_image': None,  # Load on demand
+                            'current_image': None,  # Load on demand
+                            'thumbnail': None,  # Load on demand
+                            'thumb_data_url': photo_meta.get('thumb_data_url', ''),
+                            'comment': photo_meta.get('comment', ''),
+                            'timestamp': photo_meta.get('timestamp', ''),
+                            'has_annotations': photo_meta.get('has_annotations', False),
+                            'source_photo_id': photo_meta.get('source_photo_id'),
+                            'variant': photo_meta.get('variant', 'original'),
+                            'storage_uri': photo_meta.get('storage_uri'),
+                            'file_id': photo_meta.get('file_id'),
+                            '_loaded': False  # Flag to track if image is loaded
+                        }
+                        st.session_state.sessions[session_name].append(photo_data)
+                
+                # Update photo counter
+                if 'photo_counter' in index_data:
+                    st.session_state.photo_counter = index_data['photo_counter']
+                
+                logger.info(f"Loaded {len(st.session_state.sessions)} sessions from Drive index")
+        except Exception as e:
+            logger.error(f"Error loading from Drive index: {e}")
+    
+    def _save_to_drive_index(self):
+        """Save sessions and photos metadata to Drive index.json"""
+        if not self.storage or not hasattr(self.storage, 'save_index'):
+            return
+        
+        try:
+            # Build index data structure (metadata only, not images)
+            index_data = {
+                'sessions': {},
+                'photo_counter': st.session_state.photo_counter,
+                'version': '1.0'
+            }
+            
+            for session_name, photos in st.session_state.sessions.items():
+                index_data['sessions'][session_name] = []
+                
+                for photo in photos:
+                    photo_meta = {
+                        'id': photo['id'],
+                        'comment': photo['comment'],
+                        'timestamp': photo['timestamp'],
+                        'has_annotations': photo['has_annotations'],
+                        'source_photo_id': photo.get('source_photo_id'),
+                        'variant': photo.get('variant', 'original'),
+                        'storage_uri': photo.get('storage_uri'),
+                        'file_id': photo.get('file_id'),
+                        'thumb_data_url': photo.get('thumb_data_url', '')
+                    }
+                    index_data['sessions'][session_name].append(photo_meta)
+            
+            # Save to Drive
+            self.storage.save_index(index_data)
+            logger.info("Saved index to Drive")
+        except Exception as e:
+            logger.error(f"Error saving to Drive index: {e}")
     
     def _initialize_state(self):
         """Initialize session state variables"""
@@ -187,6 +271,8 @@ class SessionStore:
         """Create a new session"""
         if session_name and session_name not in st.session_state.sessions:
             st.session_state.sessions[session_name] = []
+            # Save index to Drive
+            self._save_to_drive_index()
             return True
         return False
     
@@ -230,9 +316,14 @@ class SessionStore:
             'source_photo_id': None,  # None for original photos
             'variant': 'original',  # "original" or "annotated"
             'storage_uri': storage_uri,  # URI in cloud storage (if any)
-            'file_id': file_id  # Google Drive file ID
+            'file_id': file_id,  # Google Drive file ID
+            '_loaded': True  # Image is loaded in memory
         }
         st.session_state.sessions[session_name].append(photo_data)
+        
+        # Save index to Drive
+        self._save_to_drive_index()
+        
         return photo_data['id']
     
     def add_derived_photo(self, base_photo_id, session_name, image, comment=None):
@@ -296,9 +387,14 @@ class SessionStore:
             'source_photo_id': base_photo_id,  # Link to original
             'variant': 'annotated',
             'storage_uri': storage_uri,  # URI in cloud storage (if any)
-            'file_id': file_id  # Google Drive file ID
+            'file_id': file_id,  # Google Drive file ID
+            '_loaded': True  # Image is loaded in memory
         }
         st.session_state.sessions[session_name].append(photo_data)
+        
+        # Save index to Drive
+        self._save_to_drive_index()
+        
         return photo_data['id']
     
     def move_photo(self, photo_id, from_session, to_session):
@@ -309,6 +405,8 @@ class SessionStore:
                 if photo['id'] == photo_id:
                     moved_photo = photos.pop(i)
                     st.session_state.sessions[to_session].append(moved_photo)
+                    # Save index to Drive
+                    self._save_to_drive_index()
                     return True
         return False
     
@@ -319,6 +417,8 @@ class SessionStore:
             for i, photo in enumerate(photos):
                 if photo['id'] == photo_id:
                     photos.pop(i)
+                    # Save index to Drive
+                    self._save_to_drive_index()
                     return True
         return False
     
@@ -328,6 +428,8 @@ class SessionStore:
             for photo in st.session_state.sessions[session_name]:
                 if photo['id'] == photo_id:
                     photo['comment'] = new_comment
+                    # Save index to Drive
+                    self._save_to_drive_index()
                     return True
         return False
     
@@ -336,8 +438,45 @@ class SessionStore:
         if session_name in st.session_state.sessions:
             for photo in st.session_state.sessions[session_name]:
                 if photo['id'] == photo_id:
+                    # Load image from Drive if not already loaded
+                    if not photo.get('_loaded', True) and photo.get('storage_uri'):
+                        self._load_photo_image(photo)
                     return photo
         return None
+    
+    def _load_photo_image(self, photo):
+        """Load image data from Drive for a photo"""
+        if not self.storage or not photo.get('storage_uri'):
+            return
+        
+        try:
+            # Load image from storage
+            image = self.storage.load_image(photo['storage_uri'])
+            
+            # Update photo data
+            photo['original_image'] = image.copy()
+            photo['current_image'] = image.copy()
+            
+            # Generate thumbnail if missing
+            if not photo.get('thumbnail'):
+                thumbnail = image.copy()
+                thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                photo['thumbnail'] = thumbnail
+            
+            # Generate thumb_data_url if missing
+            if not photo.get('thumb_data_url'):
+                thumb = photo.get('thumbnail')
+                if thumb:
+                    thumb_buffer = io.BytesIO()
+                    thumb.save(thumb_buffer, format='PNG')
+                    thumb_buffer.seek(0)
+                    thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+                    photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
+            
+            photo['_loaded'] = True
+            logger.info(f"Loaded image for photo {photo['id']} from Drive")
+        except Exception as e:
+            logger.error(f"Failed to load image for photo {photo['id']}: {e}")
     
     def export_to_excel(self):
         """Export all photos and comments to Excel"""
