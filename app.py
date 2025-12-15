@@ -140,6 +140,90 @@ class SessionStore:
         """
         self.storage = storage_backend
         self._initialize_state()
+        
+        # Load from Drive index if authenticated and storage available
+        if self.storage and hasattr(self.storage, 'load_index'):
+            try:
+                self._load_from_drive_index()
+            except Exception as e:
+                logger.warning(f"Failed to load from Drive index: {e}")
+    
+    def _load_from_drive_index(self):
+        """Load sessions and photos from Drive index.json"""
+        try:
+            index_data = self.storage.load_index()
+            
+            if index_data.get('sessions'):
+                # Load sessions from index
+                # Note: We store metadata in the index, but actual images are in Drive
+                st.session_state.sessions = {}
+                
+                for session_name, photos_meta in index_data['sessions'].items():
+                    st.session_state.sessions[session_name] = []
+                    
+                    for photo_meta in photos_meta:
+                        # For now, we'll load photos lazily (only when needed)
+                        # Store metadata and file_id, load image on demand
+                        photo_data = {
+                            'id': photo_meta['id'],
+                            'original_image': None,  # Load on demand
+                            'current_image': None,  # Load on demand
+                            'thumbnail': None,  # Load on demand
+                            'thumb_data_url': photo_meta.get('thumb_data_url', ''),
+                            'comment': photo_meta.get('comment', ''),
+                            'timestamp': photo_meta.get('timestamp', ''),
+                            'has_annotations': photo_meta.get('has_annotations', False),
+                            'source_photo_id': photo_meta.get('source_photo_id'),
+                            'variant': photo_meta.get('variant', 'original'),
+                            'storage_uri': photo_meta.get('storage_uri'),
+                            'file_id': photo_meta.get('file_id'),
+                            '_loaded': False  # Flag to track if image is loaded
+                        }
+                        st.session_state.sessions[session_name].append(photo_data)
+                
+                # Update photo counter
+                if 'photo_counter' in index_data:
+                    st.session_state.photo_counter = index_data['photo_counter']
+                
+                logger.info(f"Loaded {len(st.session_state.sessions)} sessions from Drive index")
+        except Exception as e:
+            logger.error(f"Error loading from Drive index: {e}")
+    
+    def _save_to_drive_index(self):
+        """Save sessions and photos metadata to Drive index.json"""
+        if not self.storage or not hasattr(self.storage, 'save_index'):
+            return
+        
+        try:
+            # Build index data structure (metadata only, not images)
+            index_data = {
+                'sessions': {},
+                'photo_counter': st.session_state.photo_counter,
+                'version': '1.0'
+            }
+            
+            for session_name, photos in st.session_state.sessions.items():
+                index_data['sessions'][session_name] = []
+                
+                for photo in photos:
+                    photo_meta = {
+                        'id': photo['id'],
+                        'comment': photo['comment'],
+                        'timestamp': photo['timestamp'],
+                        'has_annotations': photo['has_annotations'],
+                        'source_photo_id': photo.get('source_photo_id'),
+                        'variant': photo.get('variant', 'original'),
+                        'storage_uri': photo.get('storage_uri'),
+                        'file_id': photo.get('file_id'),
+                        'thumb_data_url': photo.get('thumb_data_url', '')
+                    }
+                    index_data['sessions'][session_name].append(photo_meta)
+            
+            # Save to Drive
+            self.storage.save_index(index_data)
+            logger.info("Saved index to Drive")
+        except Exception as e:
+            logger.error(f"Error saving to Drive index: {e}")
     
     def _initialize_state(self):
         """Initialize session state variables"""
@@ -150,13 +234,18 @@ class SessionStore:
         if 'photo_counter' not in st.session_state:
             st.session_state.photo_counter = 0
         if 'current_page' not in st.session_state:
-            st.session_state.current_page = 'Fieldmap'
+            st.session_state.current_page = 'About'  # Start on About page for auth
         if 'last_saved_photo_id' not in st.session_state:
             st.session_state.last_saved_photo_id = None
         if 'camera_photo_hash' not in st.session_state:
             st.session_state.camera_photo_hash = None
         if 'camera_key' not in st.session_state:
             st.session_state.camera_key = 0
+        # Auth state
+        if 'google_authed' not in st.session_state:
+            st.session_state.google_authed = False
+        if 'google_user_email' not in st.session_state:
+            st.session_state.google_user_email = None
     
     @property
     def sessions(self):
@@ -182,6 +271,8 @@ class SessionStore:
         """Create a new session"""
         if session_name and session_name not in st.session_state.sessions:
             st.session_state.sessions[session_name] = []
+            # Save index to Drive
+            self._save_to_drive_index()
             return True
         return False
     
@@ -225,9 +316,14 @@ class SessionStore:
             'source_photo_id': None,  # None for original photos
             'variant': 'original',  # "original" or "annotated"
             'storage_uri': storage_uri,  # URI in cloud storage (if any)
-            'file_id': file_id  # Google Drive file ID
+            'file_id': file_id,  # Google Drive file ID
+            '_loaded': True  # Image is loaded in memory
         }
         st.session_state.sessions[session_name].append(photo_data)
+        
+        # Save index to Drive
+        self._save_to_drive_index()
+        
         return photo_data['id']
     
     def add_derived_photo(self, base_photo_id, session_name, image, comment=None):
@@ -291,9 +387,14 @@ class SessionStore:
             'source_photo_id': base_photo_id,  # Link to original
             'variant': 'annotated',
             'storage_uri': storage_uri,  # URI in cloud storage (if any)
-            'file_id': file_id  # Google Drive file ID
+            'file_id': file_id,  # Google Drive file ID
+            '_loaded': True  # Image is loaded in memory
         }
         st.session_state.sessions[session_name].append(photo_data)
+        
+        # Save index to Drive
+        self._save_to_drive_index()
+        
         return photo_data['id']
     
     def move_photo(self, photo_id, from_session, to_session):
@@ -304,6 +405,8 @@ class SessionStore:
                 if photo['id'] == photo_id:
                     moved_photo = photos.pop(i)
                     st.session_state.sessions[to_session].append(moved_photo)
+                    # Save index to Drive
+                    self._save_to_drive_index()
                     return True
         return False
     
@@ -314,6 +417,8 @@ class SessionStore:
             for i, photo in enumerate(photos):
                 if photo['id'] == photo_id:
                     photos.pop(i)
+                    # Save index to Drive
+                    self._save_to_drive_index()
                     return True
         return False
     
@@ -323,6 +428,8 @@ class SessionStore:
             for photo in st.session_state.sessions[session_name]:
                 if photo['id'] == photo_id:
                     photo['comment'] = new_comment
+                    # Save index to Drive
+                    self._save_to_drive_index()
                     return True
         return False
     
@@ -331,8 +438,45 @@ class SessionStore:
         if session_name in st.session_state.sessions:
             for photo in st.session_state.sessions[session_name]:
                 if photo['id'] == photo_id:
+                    # Load image from Drive if not already loaded
+                    if not photo.get('_loaded', True) and photo.get('storage_uri'):
+                        self._load_photo_image(photo)
                     return photo
         return None
+    
+    def _load_photo_image(self, photo):
+        """Load image data from Drive for a photo"""
+        if not self.storage or not photo.get('storage_uri'):
+            return
+        
+        try:
+            # Load image from storage
+            image = self.storage.load_image(photo['storage_uri'])
+            
+            # Update photo data
+            photo['original_image'] = image.copy()
+            photo['current_image'] = image.copy()
+            
+            # Generate thumbnail if missing
+            if not photo.get('thumbnail'):
+                thumbnail = image.copy()
+                thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                photo['thumbnail'] = thumbnail
+            
+            # Generate thumb_data_url if missing
+            if not photo.get('thumb_data_url'):
+                thumb = photo.get('thumbnail')
+                if thumb:
+                    thumb_buffer = io.BytesIO()
+                    thumb.save(thumb_buffer, format='PNG')
+                    thumb_buffer.seek(0)
+                    thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+                    photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
+            
+            photo['_loaded'] = True
+            logger.info(f"Loaded image for photo {photo['id']} from Drive")
+        except Exception as e:
+            logger.error(f"Failed to load image for photo {photo['id']}: {e}")
     
     def export_to_excel(self):
         """Export all photos and comments to Excel"""
@@ -906,10 +1050,114 @@ class GalleryPage(BasePage):
 
 
 class AboutPage(BasePage):
-    """About page with app information"""
+    """About page with app information and authentication"""
+    
+    def __init__(self, session_store, google_auth_helper):
+        super().__init__(session_store)
+        self.google_auth = google_auth_helper
     
     def render(self):
-        st.title("About Fieldmap")
+        # Display biomedical.jpg banner if available
+        try:
+            banner_path = Path(__file__).parent / "assets" / "biomedical.jpg"
+            if banner_path.exists():
+                banner_image = Image.open(banner_path)
+                st.image(banner_image, use_column_width=True)
+        except Exception as e:
+            st.warning(f"Could not load banner image: {str(e)}")
+        
+        st.title("Fieldmap")
+        
+        # Authentication section
+        st.markdown("---")
+        st.header("🔐 Sign In")
+        
+        # Check if credentials are configured
+        client_config = self.google_auth._get_credentials_config()
+        if not client_config:
+            st.error(
+                "⚠️ OAuth credentials not configured.\n\n"
+                "Please set GOOGLE_OAUTH_CLIENT_JSON in:\n"
+                "- Streamlit Cloud: Secrets management\n"
+                "- Local: Environment variable or .streamlit/secrets.toml"
+            )
+            with st.expander("📖 Setup Instructions"):
+                st.markdown("""
+                **1. Create OAuth Web Application credentials:**
+                - Go to [Google Cloud Console](https://console.cloud.google.com/)
+                - Create/select project and enable Google Drive API
+                - Create OAuth 2.0 Client ID (Web application type)
+                - Add authorized redirect URIs:
+                  - For Streamlit Cloud: `https://fieldmap.streamlit.app`
+                  - For local: `http://localhost:8501`
+                - Download JSON
+                
+                **2. Set secrets:**
+                - Copy the full JSON content
+                - In Streamlit Cloud: Paste in Secrets as `GOOGLE_OAUTH_CLIENT_JSON`
+                - Locally: Add to `.streamlit/secrets.toml`:
+                  ```
+                  GOOGLE_OAUTH_CLIENT_JSON = '''{"web": {...}}'''
+                  GOOGLE_REDIRECT_URI = "http://localhost:8501"
+                  ```
+                """)
+        elif self.google_auth.is_authenticated():
+            # User is authenticated
+            email = self.google_auth.get_user_email()
+            if email:
+                st.success(f"✅ Signed in as: **{email}**")
+                st.session_state.google_authed = True
+                st.session_state.google_user_email = email
+            else:
+                st.success("✅ Signed in to Google")
+                st.session_state.google_authed = True
+            
+            st.info("📂 All photos are saved to Google Drive")
+            st.info("✨ You can now access **Fieldmap** and **Gallery** from the sidebar")
+            
+            if st.button("Sign Out", key="google_signout_about", type="secondary"):
+                self.google_auth.sign_out()
+                st.session_state.google_authed = False
+                st.session_state.google_user_email = None
+                st.rerun()
+        else:
+            # User is not authenticated
+            st.info("**Sign in with Google to use Fieldmap**")
+            st.markdown("Google Drive storage is required for saving and accessing your photos.")
+            
+            # For web OAuth, we need to handle redirect flow
+            # Check if we're returning from OAuth
+            query_params = st.query_params
+            if 'code' in query_params:
+                # Handle OAuth callback
+                from urllib.parse import urlencode
+                redirect_uri = self.google_auth._get_redirect_uri()
+                
+                # Build authorization response URL with proper encoding
+                params = {'code': query_params['code']}
+                if 'state' in query_params:
+                    params['state'] = query_params['state']
+                
+                auth_response_url = f"{redirect_uri}?{urlencode(params)}"
+                
+                if self.google_auth.handle_oauth_callback(auth_response_url):
+                    st.success("✅ Successfully authenticated!")
+                    st.session_state.google_authed = True
+                    st.session_state.google_user_email = self.google_auth.get_user_email()
+                    # Clear query params
+                    st.query_params.clear()
+                    st.rerun()
+            else:
+                # Show sign-in button
+                if st.button("Sign in with Google", key="google_signin_about", type="primary"):
+                    auth_url = self.google_auth.get_auth_url()
+                    if auth_url:
+                        st.markdown(f"[Click here to authorize]({auth_url})")
+                        st.info("After authorizing, you'll be redirected back to the app.")
+        
+        st.markdown("---")
+        
+        # App description
         st.markdown("""
         A mobile-optimized web app for cadaver lab photo documentation and annotation.
         
@@ -923,34 +1171,6 @@ class AboutPage(BasePage):
         - 🖼️ Drag-and-drop gallery organization
         
         **Version:** 4.0
-        
-        ---
-        
-        ### Google Drive Storage (Required)
-        
-        Fieldmap uses Google Drive as its exclusive storage backend. All photos are automatically 
-        saved to your Google Drive under `Fieldmap/<SessionName>/`.
-        
-        **Setup Requirements:**
-        
-        1. **OAuth Credentials (Web Application)**
-           - Type: Web application (not Desktop)
-           - Credentials stored in GitHub Secrets or Streamlit Cloud Secrets
-           - No credentials.json file in repository
-        
-        2. **For Streamlit Cloud Deployment:**
-           - Set `GOOGLE_OAUTH_CLIENT_JSON` secret in Streamlit Cloud UI
-           - Set `GOOGLE_REDIRECT_URI` secret (e.g., `https://fieldmap.streamlit.app`)
-           - Sign in with Google using the sidebar button
-        
-        3. **For Local Development:**
-           - Create `.streamlit/secrets.toml` with:
-             ```toml
-             GOOGLE_OAUTH_CLIENT_JSON = '''{"web": {...}}'''
-             GOOGLE_REDIRECT_URI = "http://localhost:8501"
-             ```
-        
-        **See README.md for detailed setup instructions.**
         
         ---
         
@@ -980,6 +1200,7 @@ class AboutPage(BasePage):
 
 
 
+
 class App:
     """Main application class that orchestrates the UI and routing"""
     
@@ -1002,7 +1223,7 @@ class App:
         self.pages = {
             'Fieldmap': FieldmapPage(self.session_store),
             'Gallery': GalleryPage(self.session_store),
-            'About': AboutPage(self.session_store)
+            'About': AboutPage(self.session_store, self.google_auth)
         }
     
     def render_sidebar(self):
@@ -1027,23 +1248,48 @@ class App:
             st.markdown('<div class="sidebar-title">Fieldmap</div>', unsafe_allow_html=True)
             st.markdown('<div class="sidebar-subtitle">Documentation support for the cadaver lab.</div>', unsafe_allow_html=True)
             
+            # Check if user is authenticated
+            is_authenticated = self.google_auth.is_authenticated()
+            
             # Navigation section with label
             st.markdown('<div class="sidebar-section-label">Sections</div>', unsafe_allow_html=True)
-            current_index = ['Fieldmap', 'Gallery', 'About'].index(self.session_store.current_page)
-            selected_page = st.radio(
-                "Navigation",
-                options=['Fieldmap', 'Gallery', 'About'],
-                index=current_index,
-                key="navigation_radio",
-                label_visibility="collapsed"
-            )
-            self.session_store.current_page = selected_page
             
-            # Google authentication UI (always shown, storage is Google-only)
-            self.google_auth.render_auth_ui()
+            if not is_authenticated:
+                # User not authenticated - only show About page
+                st.info("Please sign in on the About page to access Fieldmap and Gallery.")
+                current_index = 0  # About page
+                selected_page = st.radio(
+                    "Navigation",
+                    options=['About'],
+                    index=current_index,
+                    key="navigation_radio",
+                    label_visibility="collapsed"
+                )
+            else:
+                # User authenticated - show all pages
+                current_index = ['Fieldmap', 'Gallery', 'About'].index(self.session_store.current_page)
+                selected_page = st.radio(
+                    "Navigation",
+                    options=['Fieldmap', 'Gallery', 'About'],
+                    index=current_index,
+                    key="navigation_radio",
+                    label_visibility="collapsed"
+                )
+            
+            self.session_store.current_page = selected_page
     
     def run(self):
         """Main application entry point"""
+        # Check authentication status
+        is_authenticated = self.google_auth.is_authenticated()
+        
+        # Implement navigation gating: force About page if not authenticated
+        if not is_authenticated:
+            # User not authenticated - only allow About page
+            if self.session_store.current_page != 'About':
+                self.session_store.current_page = 'About'
+        
+        # Render sidebar
         self.render_sidebar()
         
         # Render the selected page

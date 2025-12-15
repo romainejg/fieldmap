@@ -7,6 +7,7 @@ const DEBUG_MODE = false;
 let markerArea = null;
 let imageLoaded = false;
 let lastImageData = null;
+let targetImage = null;
 
 // Enhanced status logging with stack traces (limited to prevent memory leaks)
 const statusLogs = [];
@@ -57,7 +58,7 @@ function onRender(event) {
     const imageData = data.args.image_data;
     
     // If image hasn't changed, just set frame height and return
-    if (imageData === lastImageData) {
+    if (imageData === lastImageData && markerArea) {
         Streamlit.setFrameHeight();
         return;
     }
@@ -65,23 +66,24 @@ function onRender(event) {
     // Image has changed - close existing editor and prepare for new one
     lastImageData = imageData;
     
+    // Clean up existing marker area
     if (markerArea) {
         try {
-            markerArea.close();
+            markerArea.remove();
         } catch (e) {
-            console.log('Error closing existing marker area:', e);
+            console.log('Error removing existing marker area:', e);
         }
         markerArea = null;
     }
     
-    const targetImage = document.getElementById('targetImage');
+    targetImage = document.getElementById('targetImage');
     
     // Wait for image to load before auto-opening editor
     targetImage.onload = function() {
         imageLoaded = true;
         console.log('Image loaded successfully');
         
-        const h = Math.max(700, targetImage.getBoundingClientRect().height + 200);
+        const h = Math.max(800, targetImage.getBoundingClientRect().height + 300);
         Streamlit.setFrameHeight(h);
         
         // Use requestAnimationFrame + setTimeout for proper timing
@@ -114,7 +116,6 @@ function showMarkerArea() {
             return;
         }
 
-        const targetImage = document.getElementById('targetImage');
         const loadingText = document.getElementById('loadingText');
         loadingText.classList.add('active');
 
@@ -127,22 +128,24 @@ function showMarkerArea() {
 
         if (DEBUG_MODE) setStatus("Image ready: " + targetImage.naturalWidth + "x" + targetImage.naturalHeight);
 
-        const mj = window.markerjs2 || window.markerjs;
-        if (!mj) {
+        // Check if markerjs3 is loaded (UMD build exposes window.markerjs3)
+        const mj3 = window.markerjs3;
+        if (!mj3) {
             loadingText.classList.remove('active');
-            loadingText.textContent = 'Marker.js failed to load.';
-            setStatus('Marker.js not loaded - library missing');
-            console.error('Marker.js global not found', window);
+            loadingText.textContent = 'marker.js 3 failed to load.';
+            setStatus('marker.js 3 not loaded - library missing');
+            console.error('markerjs3 global not found', window);
             return;
         }
 
         if (DEBUG_MODE) {
-            setStatus("mj keys sample: " + Object.keys(mj).slice(0, 20).join(","));
+            setStatus("mj3 keys sample: " + Object.keys(mj3).slice(0, 20).join(","));
         }
 
-        // Wrap MarkerArea construction separately to catch initialization errors
+        // Create MarkerArea instance (markerjs3 is a web component)
         try {
-            markerArea = new mj.MarkerArea(targetImage);
+            markerArea = new mj3.MarkerArea();
+            markerArea.targetImage = targetImage;
         } catch (constructError) {
             setStatus(`MarkerArea construction failed: ${constructError.message}`);
             if (constructError.stack) setStatus(constructError.stack);
@@ -152,131 +155,21 @@ function showMarkerArea() {
         
         if (DEBUG_MODE) {
             setStatus("markerArea created successfully");
-            setStatus("markerArea keys sample: " + Object.keys(markerArea).slice(0, 30).join(","));
         }
 
-        // Set display mode - use popup for more reliable initialization
-        markerArea.settings.displayMode = 'popup';
-        
-        if (DEBUG_MODE) {
-            // Minimal init in debug mode - no custom UI settings
-            setStatus("Using minimal init (DEBUG_MODE=true)");
-        } else {
-            // Apply custom UI settings only when not in debug mode
-            markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
-            markerArea.uiStyleSettings.toolbarColor = '#ffffff';
-        }
+        // Add markerArea to the DOM
+        const editorHost = document.getElementById('editorHost');
+        editorHost.innerHTML = ''; // Clear previous content
+        editorHost.appendChild(markerArea);
 
-        // Track whether save has occurred to prevent double cancel
-        let didSave = false;
+        // Create toolbar for allowed marker types
+        createToolbar(editorHost, markerArea);
 
-        // Helper function to send saved image back to Streamlit
-        function sendSaved(dataUrl) {
-            didSave = true;
-            if (DEBUG_MODE) setStatus("Sending saved data to Streamlit");
-            Streamlit.setComponentValue({ saved: true, pngDataUrl: dataUrl });
-            Streamlit.setFrameHeight();
-        }
-
-        // Prefer addRenderEventListener and addCloseEventListener (documented API)
-        // These avoid the internal push path that can fail
-        const hasAddRender = typeof markerArea.addRenderEventListener === "function";
-        const hasAddClose = typeof markerArea.addCloseEventListener === "function";
-
-        if (DEBUG_MODE) {
-            setStatus("hasAddRender: " + hasAddRender + ", hasAddClose: " + hasAddClose);
-        }
-
-        // Wrap event listener setup separately
-        try {
-            if (hasAddRender) {
-                markerArea.addRenderEventListener((dataUrl) => {
-                    loadingText.classList.remove('active');
-                    if (DEBUG_MODE) setStatus("addRenderEventListener fired");
-                    sendSaved(dataUrl);
-                });
-            } else {
-                // Fallback to addEventListener for render/rendered events
-                markerArea.addEventListener('render', (event) => {
-                    loadingText.classList.remove('active');
-                    if (DEBUG_MODE) setStatus("render event fired");
-                    sendSaved(event.dataUrl);
-                });
-                markerArea.addEventListener('rendered', (event) => {
-                    loadingText.classList.remove('active');
-                    if (DEBUG_MODE) setStatus("rendered event fired");
-                    sendSaved(event.dataUrl);
-                });
-            }
-
-            if (hasAddClose) {
-                markerArea.addCloseEventListener(() => {
-                    loadingText.classList.remove('active');
-                    if (!didSave) {
-                        if (DEBUG_MODE) setStatus("addCloseEventListener: no save, sending cancelled");
-                        Streamlit.setComponentValue({
-                            cancelled: true,
-                            saved: false,
-                            pngDataUrl: null
-                        });
-                    } else {
-                        if (DEBUG_MODE) setStatus("addCloseEventListener: save already sent");
-                    }
-                    Streamlit.setFrameHeight();
-                });
-            } else {
-                // Fallback to addEventListener for close event
-                markerArea.addEventListener('close', () => {
-                    loadingText.classList.remove('active');
-                    if (!didSave) {
-                        if (DEBUG_MODE) setStatus("close event: no save, sending cancelled");
-                        Streamlit.setComponentValue({
-                            cancelled: true,
-                            saved: false,
-                            pngDataUrl: null
-                        });
-                    } else {
-                        if (DEBUG_MODE) setStatus("close event: save already sent");
-                    }
-                    Streamlit.setFrameHeight();
-                });
-            }
-        } catch (eventError) {
-            setStatus(`Event listener setup failed: ${eventError.message}`);
-            if (eventError.stack) setStatus(eventError.stack);
-            loadingText.classList.remove('active');
-            return;
-        }
-
-        // Restrict to only outline/unfilled marker types using safe direct assignment
-        // Set this AFTER event hooks to ensure it doesn't interfere with initialization
-        const tools = [
-            mj.FreehandMarker,
-            mj.ArrowMarker,
-            mj.LineMarker,
-            mj.TextMarker,
-            mj.EllipseMarker,  // Unfilled circle/ellipse
-            mj.FrameMarker      // Unfilled square/rectangle
-        ].filter(Boolean);
-
-        if (DEBUG_MODE) setStatus("Tools to register: " + tools.length);
-
-        // Only assign if the property exists; use direct assignment (not .push())
-        if ("availableMarkerTypes" in markerArea) {
-            markerArea.availableMarkerTypes = tools;
-            if (DEBUG_MODE) setStatus("Set markerArea.availableMarkerTypes directly");
-        } else if (markerArea.settings && "availableMarkerTypes" in markerArea.settings) {
-            markerArea.settings.availableMarkerTypes = tools;
-            if (DEBUG_MODE) setStatus("Set markerArea.settings.availableMarkerTypes directly");
-        } else {
-            // Do not attempt to set availableMarkerTypes if API doesn't exist
-            if (DEBUG_MODE) setStatus("No availableMarkerTypes API found; leaving defaults");
-        }
-
-        if (DEBUG_MODE) setStatus("About to call markerArea.show()");
-        markerArea.show();
-        if (DEBUG_MODE) setStatus("markerArea.show() completed");
         loadingText.classList.remove('active');
+        
+        // Adjust frame height
+        const h = Math.max(800, targetImage.getBoundingClientRect().height + 400);
+        Streamlit.setFrameHeight(h);
     } catch (err) {
         const loadingText = document.getElementById('loadingText');
         loadingText.classList.remove('active');
@@ -287,6 +180,130 @@ function showMarkerArea() {
         }
         console.error(err);
     }
+}
+
+function createToolbar(container, markerArea) {
+    // Create toolbar div
+    const toolbar = document.createElement('div');
+    toolbar.id = 'markerToolbar';
+    toolbar.style.cssText = `
+        background-color: #4CAF50;
+        padding: 12px;
+        border-radius: 8px;
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+    `;
+
+    // Define allowed marker types (unfilled shapes only)
+    const allowedMarkers = [
+        { name: 'FreehandMarker', label: '✏️ Freehand', title: 'Freehand drawing' },
+        { name: 'ArrowMarker', label: '➡️ Arrow', title: 'Arrow' },
+        { name: 'LineMarker', label: '━ Line', title: 'Line' },
+        { name: 'TextMarker', label: '🔤 Text', title: 'Text annotation' },
+        { name: 'EllipseMarker', label: '⭕ Circle', title: 'Unfilled circle/ellipse' },
+        { name: 'FrameMarker', label: '▭ Rectangle', title: 'Unfilled rectangle' }
+    ];
+
+    // Create buttons for each marker type
+    allowedMarkers.forEach(marker => {
+        const btn = document.createElement('button');
+        btn.textContent = marker.label;
+        btn.title = marker.title;
+        btn.style.cssText = `
+            background-color: white;
+            color: #333;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        `;
+        btn.onmouseover = () => btn.style.backgroundColor = '#f0f0f0';
+        btn.onmouseout = () => btn.style.backgroundColor = 'white';
+        btn.onclick = () => {
+            try {
+                markerArea.createMarker(marker.name);
+            } catch (e) {
+                console.error(`Failed to create ${marker.name}:`, e);
+                setStatus(`Failed to create marker: ${e.message}`);
+            }
+        };
+        toolbar.appendChild(btn);
+    });
+
+    // Add separator
+    const separator = document.createElement('div');
+    separator.style.cssText = 'flex-grow: 1;';
+    toolbar.appendChild(separator);
+
+    // Create Save button
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = '💾 Save';
+    saveBtn.title = 'Save annotations';
+    saveBtn.style.cssText = `
+        background-color: #2196F3;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        transition: background-color 0.2s;
+    `;
+    saveBtn.onmouseover = () => saveBtn.style.backgroundColor = '#1976D2';
+    saveBtn.onmouseout = () => saveBtn.style.backgroundColor = '#2196F3';
+    saveBtn.onclick = async () => {
+        try {
+            // Get current state
+            const state = markerArea.getState();
+            
+            // Use Renderer to rasterize the annotated image
+            const mj3 = window.markerjs3;
+            const renderer = new mj3.Renderer();
+            renderer.targetImage = targetImage;
+            
+            // Rasterize to data URL
+            const dataUrl = await renderer.rasterize(state);
+            
+            // Send to Streamlit
+            Streamlit.setComponentValue({ saved: true, pngDataUrl: dataUrl });
+            Streamlit.setFrameHeight();
+        } catch (e) {
+            console.error('Failed to save:', e);
+            setStatus(`Save failed: ${e.message}`);
+        }
+    };
+    toolbar.appendChild(saveBtn);
+
+    // Create Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '✖ Cancel';
+    cancelBtn.title = 'Cancel editing';
+    cancelBtn.style.cssText = `
+        background-color: #f44336;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background-color 0.2s;
+    `;
+    cancelBtn.onmouseover = () => cancelBtn.style.backgroundColor = '#d32f2f';
+    cancelBtn.onmouseout = () => cancelBtn.style.backgroundColor = '#f44336';
+    cancelBtn.onclick = () => {
+        Streamlit.setComponentValue({ cancelled: true, saved: false, pngDataUrl: null });
+        Streamlit.setFrameHeight();
+    };
+    toolbar.appendChild(cancelBtn);
+
+    container.appendChild(toolbar);
 }
 
 // Register with Streamlit
