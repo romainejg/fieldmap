@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+!components/photo_editor/frontend/build/
 develop-eggs/
 dist/
 downloads/
