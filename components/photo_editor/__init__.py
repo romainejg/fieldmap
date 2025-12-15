@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 import base64
 import io
+import time
 
 # Get the absolute path to the component directory
 _COMPONENT_DIR = Path(__file__).parent
@@ -57,7 +58,8 @@ def photo_editor(image, key=None):
         image_data=image_data,
         key=key,
         default=None,
-        height=750
+        height=800,
+        nonce=str(time.time())
     )
     
     return component_value
