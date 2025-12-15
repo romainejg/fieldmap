@@ -123,15 +123,25 @@ function showMarkerArea() {
         markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
         markerArea.uiStyleSettings.toolbarColor = '#ffffff';
 
-        // Restrict to only outline/unfilled marker types
-        markerArea.availableMarkerTypes = [
+        // Restrict to only outline/unfilled marker types using safe assignment
+        const tools = [
             mj.FreehandMarker,
             mj.ArrowMarker,
             mj.LineMarker,
             mj.TextMarker,
             mj.EllipseMarker,  // Unfilled circle/ellipse
             mj.FrameMarker      // Unfilled square/rectangle
-        ];
+        ].filter(Boolean);
+
+        // Only assign if the property exists; otherwise do not touch it
+        if ("availableMarkerTypes" in markerArea) {
+            markerArea.availableMarkerTypes = tools;
+        } else if (markerArea.settings && "availableMarkerTypes" in markerArea.settings) {
+            markerArea.settings.availableMarkerTypes = tools;
+        } else {
+            // Do not attempt to set availableMarkerTypes if API doesn't exist
+            console.warn("No availableMarkerTypes API found; leaving defaults");
+        }
 
         // Track whether save has occurred to prevent double cancel
         let didSave = false;
