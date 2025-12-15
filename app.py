@@ -517,8 +517,8 @@ class GalleryPage(BasePage):
             photos = self.session_store.sessions[session_name]
             items = []
             for photo in photos:
-                # Use photo ID with variant badge as label
-                variant_badge = " [Edited]" if photo.get('variant') == 'annotated' else ""
+                # Use photo ID with emoji badge for annotated photos
+                variant_badge = " 📝" if photo.get('variant') == 'annotated' else ""
                 item_id = f"Photo #{photo['id']}{variant_badge}"
                 items.append(item_id)
                 original_structure[item_id] = {
@@ -899,8 +899,10 @@ class App:
         if self.google_auth.is_authenticated() and st.session_state.get('use_cloud_storage', False):
             try:
                 storage_backend = GoogleDriveStorage()
+                logger.info("Google Drive storage initialized successfully")
             except Exception as e:
-                logger.warning(f"Failed to initialize Google Drive storage: {e}")
+                logger.error(f"Failed to initialize Google Drive storage: {e}")
+                st.warning(f"⚠️ Could not connect to Google Drive: {str(e)}")
         
         self.session_store = SessionStore(storage_backend=storage_backend)
         self.pages = {

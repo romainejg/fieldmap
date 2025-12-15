@@ -11,6 +11,9 @@ from typing import Optional
 import pickle
 import os
 
+# Google Drive API scope - allows app to access only files it creates
+GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+
 
 class PhotoStorage(ABC):
     """Abstract base class for photo storage backends"""
@@ -135,27 +138,31 @@ class LocalFolderStorage(PhotoStorage):
 
 class GooglePhotosStorage(PhotoStorage):
     """
-    Google Photos storage implementation.
+    Google Photos storage implementation - PLACEHOLDER ONLY.
     
-    This is a PLACEHOLDER for future functionality.
-    Google Photos integration is not yet implemented.
+    **DO NOT INSTANTIATE** - This class is not yet implemented.
     
-    When implemented, this class will:
-    - Authenticate with Google Photos API using OAuth2
+    This is a placeholder for potential future Google Photos API integration.
+    If you need cloud storage now, use GoogleDriveStorage instead.
+    
+    Future implementation will:
+    - Authenticate with Google Photos Library API
     - Upload images to Google Photos albums
-    - Download images from Google Photos
-    - Maintain metadata and sync state
+    - Download images from shared libraries
+    - Support album organization and metadata
+    
+    Note: Google Photos API has different permissions and quotas than Drive API.
     """
     
     def __init__(self, credentials_path: Optional[str] = None):
         """
-        Initialize Google Photos storage.
+        Raises NotImplementedError - This storage backend is not implemented.
         
         Args:
-            credentials_path: Path to Google Photos API credentials (not used yet)
+            credentials_path: Would be path to Google Photos API credentials
         
         Raises:
-            NotImplementedError: This storage backend is not yet implemented
+            NotImplementedError: Always - this class is a placeholder only
         """
         raise NotImplementedError(
             "Google Photos storage is not yet implemented. "
@@ -210,7 +217,8 @@ class GoogleDriveStorage(PhotoStorage):
                 "Install with: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client"
             )
         
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        from storage import GOOGLE_DRIVE_SCOPE
+        SCOPES = [GOOGLE_DRIVE_SCOPE]
         
         creds = None
         # Load token if it exists
@@ -319,7 +327,8 @@ class GoogleDriveStorage(PhotoStorage):
         img_byte_arr.seek(0)
         
         # Upload file
-        file_name = f'photo_{photo_id}.png'
+        # Note: file_name is generated from photo_id (integer), so it's safe from injection
+        file_name = f'photo_{int(photo_id)}.png'
         file_metadata = {
             'name': file_name,
             'parents': [session_folder_id]
@@ -328,6 +337,7 @@ class GoogleDriveStorage(PhotoStorage):
         media = MediaIoBaseUpload(img_byte_arr, mimetype='image/png', resumable=True)
         
         # Check if file already exists
+        # Using f-string is safe here since file_name is validated above
         query = f"name='{file_name}' and '{session_folder_id}' in parents and trashed=false"
         results = service.files().list(
             q=query,

@@ -101,7 +101,8 @@ class GoogleAuthHelper:
             )
             return False
         
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        from storage import GOOGLE_DRIVE_SCOPE
+        SCOPES = [GOOGLE_DRIVE_SCOPE]
         
         try:
             flow = InstalledAppFlow.from_client_secrets_file(
