@@ -81,12 +81,12 @@ st.markdown("""
         margin-bottom: 15px;
     }
     .sidebar-logo img {
-        max-width: 240px;
+        max-width: 400px;
         width: 100%;
-        margin-bottom: 10px;
+        margin-bottom: 0px;
     }
     .header-logo img {
-        max-width: 200px;
+        max-width: 500px;
         width: 100%;
     }
     .sidebar-title {
