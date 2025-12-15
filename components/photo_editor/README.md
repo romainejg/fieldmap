@@ -29,7 +29,7 @@ This component allows users to edit photos directly by drawing annotations on th
 
 ## Integration in app.py
 
-The component is integrated into the FieldmapPage class to replace the previous canvas-based drawing system:
+The component is integrated into both the FieldmapPage and GalleryPage classes to replace the previous canvas-based drawing system:
 
 ```python
 from components.photo_editor import photo_editor, decode_image_from_dataurl
@@ -46,19 +46,28 @@ if st.session_state.show_editor:
             edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
             last_photo['current_image'] = edited_image
             last_photo['has_annotations'] = True
+
+# In GalleryPage._render_photo_details():
+if st.session_state[f'show_gallery_editor_{photo["id"]}']:
+    editor_result = photo_editor(
+        image=photo['current_image'],
+        key=f"photo_editor_gallery_{photo['id']}"
+    )
+    # Similar handling as above
 ```
 
 ## User Flow
 
-1. User takes a photo with camera
-2. Photo is saved to session storage
+1. User takes a photo with camera or selects a photo from gallery
+2. Photo is saved to session storage with both `original_image` and `current_image`
 3. User clicks "Edit Photo" button
-4. marker.js editor opens showing the photo
-5. User draws annotations using available tools
+4. marker.js editor opens showing the current photo
+5. User draws annotations using available tools (freehand, arrows, shapes, text)
 6. User clicks "Save" in marker.js editor
 7. Annotated image is returned to Python
-8. Photo is updated with annotations
+8. Photo's `current_image` is updated with annotations (original remains untouched)
 9. `has_annotations` flag is set to `True`
+10. User can reset to restore the original image at any time
 
 ## Key Features
 

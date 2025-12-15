@@ -46,8 +46,8 @@ python gradio_app.py
 
 ---
 
-### Option 3: Original Streamlit App
-Best for: Existing users, no migration needed (but has canvas issues)
+### Option 3: Streamlit App with marker.js
+Best for: Existing users, no migration needed
 
 ```bash
 pip install -r requirements.txt
@@ -56,21 +56,15 @@ streamlit run app.py
 
 **Features:**
 - Original application
-- Custom marker.js component
+- Custom marker.js component for all drawing features
 - Full feature set
-- **Known issue:** Background image display issues in st_canvas on some deployments
+- Preserves original images separately from edited versions
 
-**Use when:** You're already using it and haven't experienced canvas issues, or for development/testing.
+**Use when:** You're already using it or prefer the Streamlit UI.
 
 ---
 
 ## Why Consider Gradio?
-
-### Problem with Streamlit Canvas
-The Streamlit community has multiple reports of background image issues with `st_canvas` in deployed/multipage contexts:
-- Background images not displaying on Streamlit Cloud
-- Inconsistent behavior across deployments
-- Complex custom component integration
 
 ### Gradio ImageEditor Benefits
 1. **Built-in image editing:** No custom components needed
@@ -78,6 +72,13 @@ The Streamlit community has multiple reports of background image issues with `st
 3. **Direct output:** Returns edited PIL Image, not data URLs
 4. **Production-ready:** Stable in deployment
 5. **Mobile-friendly:** Responsive design out of the box
+
+### Streamlit with marker.js
+The Streamlit app now uses a custom marker.js component for all drawing features:
+- Provides professional annotation tools
+- Consistent behavior across deployments
+- Works in both Fieldmap and Gallery pages
+- Preserves original images separately from edited versions
 
 ## Feature Comparison
 
