@@ -5,6 +5,7 @@ Refactored with OOP architecture and Google Drive integration
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from PIL import Image
 import io
@@ -13,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 import numpy as np
 import logging
+import html
 from components.photo_editor import photo_editor, decode_image_from_dataurl
 from streamlit_sortables import sort_items
 from google_auth import GoogleAuthHelper
@@ -1209,10 +1211,12 @@ class AboutPage(BasePage):
                     auth_url = self.google_auth.get_auth_url()
                     if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
-                        st.components.v1.html(
+                        # Escape the URL to prevent XSS attacks
+                        escaped_url = html.escape(auth_url, quote=True)
+                        components.html(
                             f"""
                             <script>
-                                window.parent.location.href = "{auth_url}";
+                                window.parent.location.href = "{escaped_url}";
                             </script>
                             """,
                             height=0
