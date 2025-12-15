@@ -219,3 +219,7 @@ exports/
 test_app.py
 app_old.py
 gradio_app_backup.py
+
+# Node.js dependencies
+node_modules/
+package-lock.json

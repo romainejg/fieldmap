@@ -4,20 +4,21 @@ A Streamlit custom component that uses marker.js to edit photos.
 """
 
 import streamlit.components.v1 as components
-import os
+from pathlib import Path
 from PIL import Image
 import base64
 import io
 
-# Get the absolute path to the frontend directory
-_COMPONENT_DIR = os.path.dirname(os.path.abspath(__file__))
-_FRONTEND_DIR = os.path.join(_COMPONENT_DIR, "frontend")
+# Get the absolute path to the component directory
+_COMPONENT_DIR = Path(__file__).parent
+_BUILD_DIR = _COMPONENT_DIR / "frontend" / "build"
+_DEV_DIR = _COMPONENT_DIR / "frontend"
 
-# Declare the component
-_component_func = components.declare_component(
-    "photo_editor",
-    path=_FRONTEND_DIR,
-)
+# Declare the component - use build directory if it exists, otherwise use dev directory
+if _BUILD_DIR.exists():
+    _component_func = components.declare_component("photo_editor", build_dir=str(_BUILD_DIR))
+else:
+    _component_func = components.declare_component("photo_editor", path=str(_DEV_DIR))
 
 
 def photo_editor(image, key=None):
