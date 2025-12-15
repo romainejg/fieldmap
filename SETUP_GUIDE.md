@@ -87,10 +87,12 @@ GitHub Secrets allow you to store sensitive data without committing it to your r
 - Value: Paste the **entire JSON content** from the downloaded file (including outer braces)
 - Click **Add secret**
 
-**Secret 2: GOOGLE_REDIRECT_URI**
-- Name: `GOOGLE_REDIRECT_URI`
+**Secret 2: APP_BASE_URL**
+- Name: `APP_BASE_URL`
 - Value: `https://fieldmap.streamlit.app` (or your deployment URL)
 - Click **Add secret**
+
+> **Note:** `APP_BASE_URL` replaces the legacy `GOOGLE_REDIRECT_URI` and is used as the OAuth redirect URI.
 
 > **Note:** GitHub Secrets cannot automatically sync to Streamlit Cloud. You'll need to manually add them to Streamlit Cloud in the next step.
 
@@ -130,13 +132,14 @@ GOOGLE_OAUTH_CLIENT_JSON = '''
 }
 '''
 
-GOOGLE_REDIRECT_URI = "https://fieldmap.streamlit.app"
+APP_BASE_URL = "https://fieldmap.streamlit.app"
 ```
 
 **Important:**
 - Replace the JSON content with your actual OAuth client JSON
 - Keep the triple quotes `'''` around the JSON
-- Use your actual Streamlit Cloud URL in `GOOGLE_REDIRECT_URI`
+- Set `APP_BASE_URL` to your actual Streamlit Cloud URL
+- `APP_BASE_URL` is used as the OAuth redirect URI (replaces legacy `GOOGLE_REDIRECT_URI`)
 
 4. Click **Save**
 5. The app will automatically restart with the new secrets
@@ -179,11 +182,12 @@ GOOGLE_OAUTH_CLIENT_JSON = '''
 }
 '''
 
-GOOGLE_REDIRECT_URI = "http://localhost:8501"
+APP_BASE_URL = "http://localhost:8501"
 ```
 
 **Important:**
 - Use `http://localhost:8501` for local development
+- `APP_BASE_URL` is used as the OAuth redirect URI
 - This file is already in `.gitignore` and won't be committed
 
 ### 4.3 Run Locally
@@ -201,12 +205,12 @@ The app will open at `http://localhost:8501`
 ### 5.1 Sign In
 
 1. Open the app (Streamlit Cloud or local)
-2. In the sidebar, click **Sign in with Google**
-3. Click the authorization link that appears
-4. You'll be redirected to Google's OAuth consent screen
-5. Sign in with your Google account
-6. Grant permissions to Fieldmap
-7. You'll be redirected back to the app
+2. You'll see the About page with a clean hero layout
+3. Click **Sign in with Google** button
+4. You'll be immediately redirected to Google's OAuth consent screen (no extra steps)
+5. Sign in with your Google account and grant permissions to Fieldmap
+6. You'll be automatically redirected back to the app
+7. The sidebar will now show Fieldmap and Gallery options
 
 ### 5.2 Take Photos
 

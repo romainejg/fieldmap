@@ -1057,145 +1057,182 @@ class AboutPage(BasePage):
         self.google_auth = google_auth_helper
     
     def render(self):
-        # Display biomedical.jpg banner if available
+        # Custom CSS for hero split layout
+        st.markdown("""
+        <style>
+            .hero-header {
+                text-align: center;
+                margin-bottom: 2rem;
+            }
+            .hero-header img {
+                max-width: 300px;
+                margin: 0 auto;
+            }
+            .hero-title {
+                font-size: 3rem;
+                font-weight: 700;
+                margin-top: 1rem;
+                margin-bottom: 0.5rem;
+                color: #1f1f1f;
+            }
+            .hero-subtitle {
+                font-size: 1.2rem;
+                color: #666;
+                margin-bottom: 2rem;
+            }
+            .feature-list {
+                font-size: 1.1rem;
+                line-height: 2;
+                margin-bottom: 2rem;
+            }
+            .feature-list li {
+                margin-bottom: 0.5rem;
+            }
+            .signin-card {
+                background-color: #f8f9fa;
+                border: 2px solid #e0e0e0;
+                border-radius: 12px;
+                padding: 2rem;
+                margin-top: 2rem;
+                text-align: center;
+            }
+            .signin-card h3 {
+                margin-top: 0;
+                margin-bottom: 1rem;
+                color: #1f1f1f;
+            }
+            .hero-image {
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            @media (max-width: 768px) {
+                .hero-title {
+                    font-size: 2rem;
+                }
+                .hero-subtitle {
+                    font-size: 1rem;
+                }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Header with logo
+        st.markdown('<div class="hero-header">', unsafe_allow_html=True)
         try:
-            banner_path = Path(__file__).parent / "assets" / "biomedical.jpg"
-            if banner_path.exists():
-                banner_image = Image.open(banner_path)
-                st.image(banner_image, use_column_width=True)
-        except Exception as e:
-            st.warning(f"Could not load banner image: {str(e)}")
+            logo_path = Path(__file__).parent / "assets" / "logo.png"
+            if logo_path.exists():
+                logo_image = Image.open(logo_path)
+                st.image(logo_image, width=250)
+        except Exception:
+            pass
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        st.title("Fieldmap")
+        # Two-column layout: text on left, image on right
+        col_left, col_right = st.columns([1.2, 1])
         
-        # Authentication section
-        st.markdown("---")
-        st.header("🔐 Sign In")
-        
-        # Check if credentials are configured
-        client_config = self.google_auth._get_credentials_config()
-        if not client_config:
-            st.error(
-                "⚠️ OAuth credentials not configured.\n\n"
-                "Please set GOOGLE_OAUTH_CLIENT_JSON in:\n"
-                "- Streamlit Cloud: Secrets management\n"
-                "- Local: Environment variable or .streamlit/secrets.toml"
-            )
-            with st.expander("📖 Setup Instructions"):
-                st.markdown("""
-                **1. Create OAuth Web Application credentials:**
-                - Go to [Google Cloud Console](https://console.cloud.google.com/)
-                - Create/select project and enable Google Drive API
-                - Create OAuth 2.0 Client ID (Web application type)
-                - Add authorized redirect URIs:
-                  - For Streamlit Cloud: `https://fieldmap.streamlit.app`
-                  - For local: `http://localhost:8501`
-                - Download JSON
-                
-                **2. Set secrets:**
-                - Copy the full JSON content
-                - In Streamlit Cloud: Paste in Secrets as `GOOGLE_OAUTH_CLIENT_JSON`
-                - Locally: Add to `.streamlit/secrets.toml`:
-                  ```
-                  GOOGLE_OAUTH_CLIENT_JSON = '''{"web": {...}}'''
-                  GOOGLE_REDIRECT_URI = "http://localhost:8501"
-                  ```
-                """)
-        elif self.google_auth.is_authenticated():
-            # User is authenticated
-            email = self.google_auth.get_user_email()
-            if email:
-                st.success(f"✅ Signed in as: **{email}**")
-                st.session_state.google_authed = True
-                st.session_state.google_user_email = email
-            else:
-                st.success("✅ Signed in to Google")
-                st.session_state.google_authed = True
+        with col_left:
+            st.markdown('<div class="hero-title">Fieldmap</div>', unsafe_allow_html=True)
+            st.markdown('<div class="hero-subtitle">Documentation support for the cadaver lab</div>', unsafe_allow_html=True)
             
-            st.info("📂 All photos are saved to Google Drive")
-            st.info("✨ You can now access **Fieldmap** and **Gallery** from the sidebar")
+            # Concise feature list
+            st.markdown("""
+            <div class="feature-list">
+            <ul style="list-style-type: none; padding-left: 0;">
+                <li>Capture and organize cadaver lab photos</li>
+                <li>Annotate with freehand, arrows, and outline shapes</li>
+                <li>Sessions behave like albums</li>
+                <li>Stored and synced in Google Drive</li>
+            </ul>
+            </div>
+            """, unsafe_allow_html=True)
             
-            if st.button("Sign Out", key="google_signout_about", type="secondary"):
-                self.google_auth.sign_out()
-                st.session_state.google_authed = False
-                st.session_state.google_user_email = None
-                st.rerun()
-        else:
-            # User is not authenticated
-            st.info("**Sign in with Google to use Fieldmap**")
-            st.markdown("Google Drive storage is required for saving and accessing your photos.")
+            # Sign-in card
+            st.markdown('<div class="signin-card">', unsafe_allow_html=True)
             
-            # For web OAuth, we need to handle redirect flow
-            # Check if we're returning from OAuth
+            # Check if we're handling OAuth callback
             query_params = st.query_params
-            if 'code' in query_params:
+            if 'code' in query_params and 'state' in query_params:
                 # Handle OAuth callback
                 from urllib.parse import urlencode
                 redirect_uri = self.google_auth._get_redirect_uri()
                 
-                # Build authorization response URL with proper encoding
-                params = {'code': query_params['code']}
-                if 'state' in query_params:
-                    params['state'] = query_params['state']
-                
+                # Build authorization response URL
+                params = {'code': query_params['code'], 'state': query_params['state']}
                 auth_response_url = f"{redirect_uri}?{urlencode(params)}"
                 
-                if self.google_auth.handle_oauth_callback(auth_response_url):
-                    st.success("✅ Successfully authenticated!")
-                    st.session_state.google_authed = True
-                    st.session_state.google_user_email = self.google_auth.get_user_email()
-                    # Clear query params
-                    st.query_params.clear()
+                with st.spinner("Completing sign-in..."):
+                    if self.google_auth.handle_oauth_callback(auth_response_url):
+                        st.session_state.google_authed = True
+                        st.session_state.google_user_email = self.google_auth.get_user_email()
+                        # Clear query params
+                        st.query_params.clear()
+                        st.rerun()
+                    else:
+                        st.error("Authentication failed. Please try again.")
+                        st.query_params.clear()
+            
+            # Check if credentials are configured
+            client_config = self.google_auth._get_credentials_config()
+            if not client_config:
+                st.markdown("### Setup Required")
+                st.error("OAuth credentials not configured")
+                with st.expander("Setup Instructions"):
+                    st.markdown("""
+                    **Required secrets:**
+                    - `GOOGLE_OAUTH_CLIENT_JSON` - OAuth client credentials
+                    - `APP_BASE_URL` - App URL (e.g., https://fieldmap.streamlit.app)
+                    
+                    See SETUP_GUIDE.md for details.
+                    """)
+            elif self.google_auth.is_authenticated():
+                # User is authenticated
+                email = self.google_auth.get_user_email()
+                st.markdown("### Signed In")
+                if email:
+                    st.success(f"Signed in as **{email}**")
+                else:
+                    st.success("Signed in to Google")
+                
+                st.info("Access Fieldmap and Gallery from the sidebar")
+                
+                if st.button("Sign Out", key="google_signout_about", type="secondary", use_container_width=True):
+                    self.google_auth.sign_out()
+                    st.session_state.google_authed = False
+                    st.session_state.google_user_email = None
                     st.rerun()
             else:
-                # Show sign-in button
-                if st.button("Sign in with Google", key="google_signin_about", type="primary"):
+                # User is not authenticated - show one-click sign-in
+                st.markdown("### Sign In")
+                st.markdown("Sign in with Google to use Fieldmap")
+                
+                if st.button("Sign in with Google", key="google_signin_about", type="primary", use_container_width=True):
                     auth_url = self.google_auth.get_auth_url()
                     if auth_url:
-                        st.markdown(f"[Click here to authorize]({auth_url})")
-                        st.info("After authorizing, you'll be redirected back to the app.")
+                        # Use JavaScript to immediately redirect (one-step sign-in)
+                        st.components.v1.html(
+                            f"""
+                            <script>
+                                window.parent.location.href = "{auth_url}";
+                            </script>
+                            """,
+                            height=0
+                        )
+                    else:
+                        st.error("Failed to generate authorization URL")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        st.markdown("---")
-        
-        # App description
-        st.markdown("""
-        A mobile-optimized web app for cadaver lab photo documentation and annotation.
-        
-        **Key Features:**
-        - 📸 Capture and annotate photos with drawing tools
-        - 📁 Organize photos into sessions
-        - 📝 Create annotated copies (keeps originals unchanged)
-        - ☁️ Google Drive cloud storage (required)
-        - 📊 Export data to Excel
-        - 🔐 Secure Google OAuth authentication
-        - 🖼️ Drag-and-drop gallery organization
-        
-        **Version:** 4.0
-        
-        ---
-        
-        ### How Photo Editing Works
-        
-        When you edit a photo, the app creates a **new annotated copy** while keeping the original unchanged:
-        
-        - ✅ Original photo remains pristine
-        - ✅ Annotated copy links back to original
-        - ✅ Multiple edits create multiple copies
-        - ✅ Easy to track photo provenance
-        - ✅ All versions saved to Google Drive
-        
-        ### Annotation Tools
-        
-        The editor provides several drawing tools:
-        - ✏️ Freehand drawing
-        - ➡️ Arrows
-        - ━ Lines
-        - ⭕ Unfilled circles/ellipses
-        - ▭ Unfilled rectangles
-        - 🔤 Text annotations
-        
-        This ensures you never lose your original data!
-        """)
+        with col_right:
+            # Display hero image
+            try:
+                hero_path = Path(__file__).parent / "assets" / "biomedical.jpg"
+                if hero_path.exists():
+                    hero_image = Image.open(hero_path)
+                    st.markdown('<div class="hero-image">', unsafe_allow_html=True)
+                    st.image(hero_image, use_column_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.warning(f"Could not load hero image: {str(e)}")
 
 
 
