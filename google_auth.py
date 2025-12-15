@@ -28,10 +28,13 @@ class GoogleAuthHelper:
         Tries st.secrets first, then environment variables.
         
         Returns:
-            dict: OAuth client configuration
+            dict: OAuth client configuration or None if not available
         """
         # Try Streamlit secrets first
-        raw_json = st.secrets.get("GOOGLE_OAUTH_CLIENT_JSON")
+        try:
+            raw_json = st.secrets.get("GOOGLE_OAUTH_CLIENT_JSON")
+        except Exception:
+            raw_json = None
         
         # Fallback to environment variable
         if not raw_json:
@@ -48,7 +51,10 @@ class GoogleAuthHelper:
     def _get_redirect_uri(self):
         """Get the redirect URI from secrets or environment."""
         # Try Streamlit secrets first
-        redirect_uri = st.secrets.get("GOOGLE_REDIRECT_URI")
+        try:
+            redirect_uri = st.secrets.get("GOOGLE_REDIRECT_URI")
+        except Exception:
+            redirect_uri = None
         
         # Fallback to environment variable
         if not redirect_uri:
@@ -302,12 +308,15 @@ class GoogleAuthHelper:
             query_params = st.query_params
             if 'code' in query_params:
                 # Handle OAuth callback
-                authorization_response = st.query_params.to_dict()
-                # Reconstruct full URL (simplified for Streamlit)
+                from urllib.parse import urlencode
                 redirect_uri = self._get_redirect_uri()
-                auth_response_url = f"{redirect_uri}?code={query_params['code']}"
+                
+                # Build authorization response URL with proper encoding
+                params = {'code': query_params['code']}
                 if 'state' in query_params:
-                    auth_response_url += f"&state={query_params['state']}"
+                    params['state'] = query_params['state']
+                
+                auth_response_url = f"{redirect_uri}?{urlencode(params)}"
                 
                 if self.handle_oauth_callback(auth_response_url):
                     st.sidebar.success("✅ Successfully authenticated!")

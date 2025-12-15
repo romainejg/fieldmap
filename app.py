@@ -556,12 +556,26 @@ class GalleryPage(BasePage):
                     thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
                     photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
                 
-                # Use HTML with embedded image for the tile
+                # Validate data URL format to prevent XSS
+                thumb_url = photo['thumb_data_url']
+                if not thumb_url.startswith('data:image/'):
+                    # Invalid format, regenerate
+                    thumb = photo.get('thumbnail', photo['current_image'].copy())
+                    thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                    thumb_buffer = io.BytesIO()
+                    thumb.save(thumb_buffer, format='PNG')
+                    thumb_buffer.seek(0)
+                    thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+                    thumb_url = f"data:image/png;base64,{thumb_base64}"
+                    photo['thumb_data_url'] = thumb_url
+                
+                # Use HTML with embedded image for the tile (data URL is safe, generated internally)
+                # Variant badge is emoji only (safe)
                 variant_badge = "📝 " if photo.get('variant') == 'annotated' else ""
                 # Create HTML item with image
                 item_html = f'''<div style="text-align:center;">
-                    <img src="{photo['thumb_data_url']}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;" />
-                    <div style="font-size:10px;margin-top:2px;">{variant_badge}#{photo['id']}</div>
+                    <img src="{thumb_url}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;" />
+                    <div style="font-size:10px;margin-top:2px;">{variant_badge}#{int(photo['id'])}</div>
                 </div>'''
                 
                 item_id = f"photo_{photo['id']}"
