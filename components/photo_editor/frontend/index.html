@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Editor</title>
+    <script src="https://cdn.jsdelivr.net/npm/markerjs2@2.32.3/markerjs2.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f5f5f5;
+        }
+        #container {
+            max-width: 100%;
+            text-align: center;
+        }
+        #targetImage {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+        .button-container {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        #editButton {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #editButton:hover {
+            background-color: #45a049;
+        }
+        #cancelButton {
+            background-color: #f44336;
+            color: white;
+        }
+        #cancelButton:hover {
+            background-color: #da190b;
+        }
+        #editButton:disabled, #cancelButton:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: none;
+            margin-top: 10px;
+            color: #666;
+        }
+        .loading.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <img id="targetImage" alt="Photo to edit" />
+        <div class="button-container">
+            <button id="editButton">Edit Photo</button>
+            <button id="cancelButton">Cancel</button>
+        </div>
+        <div class="loading" id="loadingText">Loading editor...</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@latest/dist/streamlit-component-lib.js"></script>
+    <script>
+        const Streamlit = window.Streamlit;
+        let markerArea = null;
+        let imageLoaded = false;
+
+        function onRender(event) {
+            const data = event.detail;
+            
+            if (!data || !data.args || !data.args.image_data) {
+                console.error('No image data received');
+                return;
+            }
+
+            const imageData = data.args.image_data;
+            const targetImage = document.getElementById('targetImage');
+            
+            // Wait for image to load before enabling editor
+            targetImage.onload = function() {
+                imageLoaded = true;
+                document.getElementById('editButton').disabled = false;
+                console.log('Image loaded successfully');
+                Streamlit.setFrameHeight();
+            };
+            
+            targetImage.onerror = function() {
+                console.error('Failed to load image');
+                imageLoaded = false;
+            };
+            
+            // Set image source (should be base64 data URL)
+            targetImage.src = imageData;
+            
+            Streamlit.setFrameHeight();
+        }
+
+        function showMarkerArea() {
+            if (!imageLoaded) {
+                console.error('Image not loaded yet');
+                return;
+            }
+
+            const targetImage = document.getElementById('targetImage');
+            const loadingText = document.getElementById('loadingText');
+            
+            loadingText.classList.add('active');
+            
+            // Create marker.js instance
+            markerArea = new markerjs2.MarkerArea(targetImage);
+            
+            // Configure marker.js
+            markerArea.settings.displayMode = 'popup';
+            markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
+            markerArea.uiStyleSettings.toolbarColor = '#ffffff';
+            
+            // Available tools: FreehandMarker, ArrowMarker, TextMarker, 
+            // EllipseMarker, FrameMarker, LineMarker, etc.
+            markerArea.availableMarkerTypes = [
+                markerjs2.FreehandMarker,
+                markerjs2.ArrowMarker,
+                markerjs2.LineMarker,
+                markerjs2.TextMarker,
+                markerjs2.EllipseMarker,
+                markerjs2.FrameMarker
+            ];
+            
+            // Handle render (save) callback
+            markerArea.addEventListener('render', (event) => {
+                loadingText.classList.remove('active');
+                
+                // event.dataUrl contains the edited image as data URL
+                const pngDataUrl = event.dataUrl;
+                
+                // Send result back to Python
+                Streamlit.setComponentValue({
+                    pngDataUrl: pngDataUrl,
+                    saved: true
+                });
+            });
+            
+            // Handle close without saving
+            markerArea.addEventListener('close', () => {
+                loadingText.classList.remove('active');
+            });
+            
+            // Show the marker area
+            markerArea.show();
+            loadingText.classList.remove('active');
+        }
+
+        function cancelEditor() {
+            // Send null/cancel signal back to Python
+            Streamlit.setComponentValue({
+                pngDataUrl: null,
+                saved: false,
+                cancelled: true
+            });
+        }
+
+        // Set up event listeners
+        document.getElementById('editButton').addEventListener('click', showMarkerArea);
+        document.getElementById('cancelButton').addEventListener('click', cancelEditor);
+
+        // Disable edit button until image loads
+        document.getElementById('editButton').disabled = true;
+
+        // Register with Streamlit
+        Streamlit.setComponentReady();
+        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+    </script>
+</body>
+</html>
