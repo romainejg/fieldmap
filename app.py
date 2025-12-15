@@ -39,16 +39,19 @@ st.markdown("""
         margin-top: 0.5rem;
     }
     .photo-card {
-        border: 1px solid #e8e8e8;
-        border-radius: 12px;
-        padding: 12px;
-        margin: 8px 0;
+        border: none;
+        border-radius: 8px;
+        padding: 8px;
+        margin: 4px;
         background-color: #ffffff;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         transition: box-shadow 0.2s ease;
     }
     .photo-card:hover {
-        box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .photo-card img {
+        border-radius: 4px;
     }
     .photo-card-metadata {
         font-size: 0.8em;
@@ -79,7 +82,12 @@ st.markdown("""
     }
     .sidebar-logo img {
         max-width: 240px;
+        width: 100%;
         margin-bottom: 10px;
+    }
+    .header-logo img {
+        max-width: 200px;
+        width: 100%;
     }
     .sidebar-title {
         font-size: 1.3em;
@@ -175,7 +183,8 @@ class SessionStore:
             'current_image': image.copy(),
             'comment': comment,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'has_annotations': False
+            'has_annotations': False,
+            'draw_version': 0
         }
         st.session_state.sessions[session_name].append(photo_data)
         return photo_data['id']
@@ -398,11 +407,13 @@ class FieldmapPage(BasePage):
             logo_path = Path(__file__).parent / "assets" / "logo.png"
             if logo_path.exists():
                 logo_image = Image.open(logo_path)
-                st.image(logo_image, width=100)
+                st.image(logo_image, width=180)
             else:
-                st.markdown("**Fieldmap**")
+                st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
+                st.warning("Logo not found at assets/logo.png")
         except Exception as e:
-            st.markdown("**Fieldmap**")
+            st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
+            st.error(f"Error loading logo: {str(e)}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Session management
@@ -495,6 +506,10 @@ class FieldmapPage(BasePage):
                 st.markdown("#### Draw on Photo")
                 st.info("Draw directly on the photo with freehand or use shapes. Click 'Apply Drawing' to save.")
                 
+                # Initialize draw_version if not present (for backward compatibility)
+                if 'draw_version' not in last_photo:
+                    last_photo['draw_version'] = 0
+                
                 # Choose drawing mode
                 col1, col2 = st.columns(2)
                 with col1:
@@ -525,27 +540,48 @@ class FieldmapPage(BasePage):
                     key="last_photo_stroke_width"
                 )
                 
+                # Create a resized copy for display (fixed width 700px, preserve aspect ratio)
+                display_image = last_photo['current_image'].copy()
+                original_width, original_height = display_image.size
+                display_width = min(700, original_width)
+                aspect_ratio = original_height / original_width
+                display_height = int(display_width * aspect_ratio)
+                display_image = display_image.resize((display_width, display_height), Image.Resampling.LANCZOS)
+                
+                # Ensure display image is RGB
+                if display_image.mode != 'RGB':
+                    display_image = display_image.convert('RGB')
+                
                 # Display canvas with background image
                 canvas_result = st_canvas(
                     fill_color="rgba(0, 0, 0, 0)",
                     stroke_width=stroke_width,
                     stroke_color=stroke_color,
-                    background_image=last_photo['current_image'],
+                    background_image=display_image,
                     drawing_mode=drawing_mode,
-                    key=f"canvas_{last_photo['id']}",
-                    height=min(last_photo['current_image'].height, 500),
-                    width=min(last_photo['current_image'].width, 700),
+                    key=f"canvas_{last_photo['id']}_{last_photo['draw_version']}",
+                    height=display_height,
+                    width=display_width,
                 )
                 
                 # Apply drawing button
                 if st.button("Apply Drawing", key="apply_drawing", type="primary"):
                     if canvas_result.image_data is not None:
-                        merged_image = self.annotator.merge_canvas_with_image(
-                            last_photo['current_image'],
+                        # Merge canvas with display image
+                        merged_display = self.annotator.merge_canvas_with_image(
+                            display_image,
                             canvas_result
                         )
+                        
+                        # Scale back to original size if needed
+                        if (display_width, display_height) != (original_width, original_height):
+                            merged_image = merged_display.resize((original_width, original_height), Image.Resampling.LANCZOS)
+                        else:
+                            merged_image = merged_display
+                        
                         last_photo['current_image'] = merged_image
                         last_photo['has_annotations'] = True
+                        last_photo['draw_version'] += 1
                         st.success("Drawing applied to photo!")
                         st.rerun()
 
@@ -554,39 +590,38 @@ class GalleryPage(BasePage):
     """Gallery page for viewing and managing photos"""
     
     def render_photo_card(self, photo, session_name, cols):
-        """Render a single photo card with clean styling"""
+        """Render a single photo card with clean iPhone-like styling"""
         with cols:
             st.markdown('<div class="photo-card">', unsafe_allow_html=True)
             
-            # Thumbnail with fixed width
-            st.image(photo['current_image'], width=180)
+            # Thumbnail with container width for responsive sizing
+            st.image(photo['current_image'], use_column_width=True)
             
             # Minimal metadata - extract time from timestamp
             timestamp_parts = photo['timestamp'].split()
             time_str = timestamp_parts[1] if len(timestamp_parts) > 1 else timestamp_parts[0]
             
-            st.markdown(f"""
-            <div class="photo-card-metadata">
-                <strong>{session_name}</strong><br/>
-                ID: {photo['id']} • {time_str}
-            </div>
-            """, unsafe_allow_html=True)
+            st.caption(f"**{session_name}** • ID {photo['id']}")
+            st.caption(time_str)
             
-            # Move control
+            # Move control - compact
             other_sessions = [s for s in self.session_store.sessions.keys() if s != session_name]
             if other_sessions:
-                move_to = st.selectbox(
-                    "Move to:",
-                    options=[""] + other_sessions,
-                    key=f"move_select_{photo['id']}",
-                    label_visibility="collapsed"
-                )
-                if move_to:
-                    if self.session_store.move_photo(photo['id'], session_name, move_to):
-                        st.success("Moved!")
-                        st.rerun()
+                col_move_label, col_move_btn = st.columns([3, 1])
+                with col_move_label:
+                    move_to = st.selectbox(
+                        "Move to",
+                        options=[""] + other_sessions,
+                        key=f"move_select_{photo['id']}",
+                        label_visibility="collapsed"
+                    )
+                with col_move_btn:
+                    if move_to and st.button("Go", key=f"move_btn_{photo['id']}", use_container_width=True):
+                        if self.session_store.move_photo(photo['id'], session_name, move_to):
+                            st.success("Moved!")
+                            st.rerun()
             
-            if st.button("View/Edit", key=f"view_{photo['id']}", use_container_width=True):
+            if st.button("View", key=f"view_{photo['id']}", use_container_width=True):
                 st.session_state[f'expand_photo_{photo['id']}'] = True
                 st.rerun()
             
@@ -618,8 +653,8 @@ class GalleryPage(BasePage):
         else:
             st.write(f"**{len(photos_to_display)} photo(s) found**")
             
-            # Display photos in responsive grid with smaller thumbnails
-            cols_per_row = 3
+            # Display photos in responsive grid - 4 columns desktop, 2 mobile handled by Streamlit
+            cols_per_row = 4
             for i in range(0, len(photos_to_display), cols_per_row):
                 cols = st.columns(cols_per_row)
                 for j in range(cols_per_row):
@@ -684,6 +719,10 @@ class GalleryPage(BasePage):
             st.markdown("**Add Annotations**")
             st.info("Draw directly on the photo. Use 'Reset' to restore original.")
             
+            # Initialize draw_version if not present (for backward compatibility)
+            if 'draw_version' not in photo:
+                photo['draw_version'] = 0
+            
             col1, col2 = st.columns(2)
             with col1:
                 drawing_mode = st.selectbox(
@@ -712,28 +751,49 @@ class GalleryPage(BasePage):
                 key=f"stroke_width_{photo['id']}"
             )
             
+            # Create a resized copy for display (fixed width 700px, preserve aspect ratio)
+            display_image = photo['current_image'].copy()
+            original_width, original_height = display_image.size
+            display_width = min(700, original_width)
+            aspect_ratio = original_height / original_width
+            display_height = int(display_width * aspect_ratio)
+            display_image = display_image.resize((display_width, display_height), Image.Resampling.LANCZOS)
+            
+            # Ensure display image is RGB
+            if display_image.mode != 'RGB':
+                display_image = display_image.convert('RGB')
+            
             # Canvas for drawing
             canvas_result = st_canvas(
                 fill_color="rgba(0, 0, 0, 0)",
                 stroke_width=stroke_width,
                 stroke_color=stroke_color,
-                background_image=photo['current_image'],
+                background_image=display_image,
                 drawing_mode=drawing_mode,
-                key=f"gallery_canvas_{photo['id']}",
-                height=min(photo['current_image'].height, 400),
-                width=min(photo['current_image'].width, 600),
+                key=f"gallery_canvas_{photo['id']}_{photo['draw_version']}",
+                height=display_height,
+                width=display_width,
             )
             
             col_apply, col_reset = st.columns(2)
             with col_apply:
                 if st.button("Apply", key=f"apply_{photo['id']}"):
                     if canvas_result.image_data is not None:
-                        merged_image = self.annotator.merge_canvas_with_image(
-                            photo['current_image'],
+                        # Merge canvas with display image
+                        merged_display = self.annotator.merge_canvas_with_image(
+                            display_image,
                             canvas_result
                         )
+                        
+                        # Scale back to original size if needed
+                        if (display_width, display_height) != (original_width, original_height):
+                            merged_image = merged_display.resize((original_width, original_height), Image.Resampling.LANCZOS)
+                        else:
+                            merged_image = merged_display
+                        
                         photo['current_image'] = merged_image
                         photo['has_annotations'] = True
+                        photo['draw_version'] += 1
                         st.success("Drawing applied!")
                         st.rerun()
             
@@ -741,6 +801,7 @@ class GalleryPage(BasePage):
                 if st.button("Reset", key=f"reset_{photo['id']}"):
                     photo['current_image'] = photo['original_image'].copy()
                     photo['has_annotations'] = False
+                    photo['draw_version'] += 1
                     st.success("Annotations cleared!")
                     st.rerun()
             
@@ -760,15 +821,14 @@ class AboutPage(BasePage):
     def render(self):
         st.title("About Fieldmap")
         st.markdown("""
-        Fieldmap is a mobile-optimized web app for biomedical engineers working in cadaver labs 
-        to capture, annotate, and organize photos with ease.
+        A mobile-optimized web app for cadaver lab photo documentation and annotation.
         
         **Key Features:**
-        - Take photos and annotate with freehand drawing
+        - Capture and annotate photos with freehand drawing
         - Organize photos into sessions
         - Export data to Excel
         
-        **Version:** Fieldmap v2.0
+        **Version:** 2.0
         """)
 
 
@@ -796,8 +856,10 @@ class App:
                     st.image(logo_image, use_container_width=True)
                 else:
                     st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
+                    st.warning("Logo not found at assets/logo.png")
             except Exception as e:
                 st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
+                st.error(f"Error loading logo: {str(e)}")
             st.markdown('</div>', unsafe_allow_html=True)
             
             # App title and subtitle
