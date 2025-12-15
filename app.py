@@ -14,8 +14,7 @@ from streamlit_drawable_canvas import st_canvas
 import numpy as np
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logger for this module
 logger = logging.getLogger(__name__)
 
 # Configure page for mobile optimization
@@ -310,7 +309,7 @@ class Annotator:
         Returns:
             PIL Image with canvas drawing merged
         """
-        if canvas_result.image_data is None:
+        if canvas_result is None or canvas_result.image_data is None:
             return background_image
         
         # Convert background to RGBA for alpha compositing
@@ -364,10 +363,8 @@ class FieldmapPage(BasePage):
                 logo_image = Image.open(logo_path)
                 st.image(logo_image, width=100)
             else:
-                logger.warning(f"Logo not found at {logo_path}")
                 st.write("📸")
         except Exception as e:
-            logger.error(f"Error loading logo: {e}")
             st.write("📸")
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -768,10 +765,8 @@ class App:
                     logo_image = Image.open(logo_path)
                     st.image(logo_image, use_container_width=True)
                 else:
-                    logger.warning(f"Logo not found at {logo_path}")
                     st.write("📸")
             except Exception as e:
-                logger.error(f"Error loading logo: {e}")
                 st.write("📸")
             st.markdown('</div>', unsafe_allow_html=True)
             
