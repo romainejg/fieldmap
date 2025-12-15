@@ -37,8 +37,6 @@ function onRender(event) {
     
     // Set image source (should be base64 data URL)
     targetImage.src = imageData;
-    
-    Streamlit.setFrameHeight();
 }
 
 function showMarkerArea() {

@@ -16,7 +16,7 @@ _DEV_DIR = _COMPONENT_DIR / "frontend"
 
 # Declare the component - use build directory if it exists, otherwise use dev directory
 if _BUILD_DIR.exists():
-    _component_func = components.declare_component("photo_editor", build_dir=str(_BUILD_DIR))
+    _component_func = components.declare_component("photo_editor", path=str(_BUILD_DIR))
 else:
     _component_func = components.declare_component("photo_editor", path=str(_DEV_DIR))
 
