@@ -13,6 +13,11 @@ module.exports = {
       template: './src/index.html',
       inject: 'body',
     }),
+    new CopyWebpackPlugin({
+      patterns: [
+        { from: 'public', to: '.' }
+      ],
+    }),
   ],
   devServer: {
     port: 3001,
