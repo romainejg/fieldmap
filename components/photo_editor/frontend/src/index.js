@@ -8,13 +8,18 @@ let markerArea = null;
 let imageLoaded = false;
 let lastImageData = null;
 
-// Enhanced status logging with stack traces
+// Enhanced status logging with stack traces (limited to prevent memory leaks)
 const statusLogs = [];
+const MAX_STATUS_LOGS = 50;
 
 function setStatus(msg) {
     const statusText = document.getElementById('statusText');
     if (statusText) {
         statusLogs.push(`[${new Date().toISOString().split('T')[1].slice(0, -1)}] ${msg}`);
+        // Keep only the last MAX_STATUS_LOGS entries
+        if (statusLogs.length > MAX_STATUS_LOGS) {
+            statusLogs.shift();
+        }
         statusText.textContent = statusLogs.join('\n');
         statusText.classList.add('active');
     }
@@ -156,7 +161,10 @@ function showMarkerArea() {
         }
 
         // Restrict to only outline/unfilled marker types using safe direct assignment
-        // NEVER use .push() - always use direct assignment
+        // IMPORTANT: Use direct assignment (=) instead of .push() to avoid errors.
+        // If markerArea.availableMarkerTypes is undefined, calling .push() would throw
+        // "Cannot read properties of undefined (reading 'push')".
+        // Direct assignment ensures we create/replace the array safely.
         const tools = [
             mj.FreehandMarker,
             mj.ArrowMarker,

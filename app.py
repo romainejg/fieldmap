@@ -178,10 +178,16 @@ class SessionStore:
     def add_photo(self, image, session_name, comment=""):
         """Add a photo with metadata to a session"""
         st.session_state.photo_counter += 1
+        
+        # Create thumbnail for efficient gallery display
+        thumbnail = image.copy()
+        thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
+        
         photo_data = {
             'id': st.session_state.photo_counter,
             'original_image': image.copy(),
             'current_image': image.copy(),
+            'thumbnail': thumbnail,  # Pre-generated thumbnail
             'comment': comment,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'has_annotations': False
@@ -388,6 +394,11 @@ class FieldmapPage(BasePage):
                             last_photo['current_image'] = edited_image
                             last_photo['has_annotations'] = True
                             
+                            # Regenerate thumbnail for updated image
+                            thumbnail = edited_image.copy()
+                            thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                            last_photo['thumbnail'] = thumbnail
+                            
                             st.success("Photo updated with annotations!")
                             st.rerun()
                         except Exception as e:
@@ -540,9 +551,15 @@ class GalleryPage(BasePage):
                         if i + j < len(photos):
                             photo = photos[i + j]
                             with cols[j]:
-                                # Create thumbnail
-                                thumb = photo['current_image'].copy()
-                                thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                                # Use pre-generated thumbnail if available, otherwise create on-the-fly
+                                if 'thumbnail' in photo and photo['thumbnail']:
+                                    thumb = photo['thumbnail']
+                                else:
+                                    # Fallback: create thumbnail for old photos without cached thumbnails
+                                    thumb = photo['current_image'].copy()
+                                    thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                                    # Cache it for next time
+                                    photo['thumbnail'] = thumb
                                 
                                 # Display thumbnail
                                 st.image(thumb, use_column_width=True)
@@ -659,6 +676,11 @@ class GalleryPage(BasePage):
                         # Update the photo
                         photo['current_image'] = edited_image
                         photo['has_annotations'] = True
+                        
+                        # Regenerate thumbnail for updated image
+                        thumbnail = edited_image.copy()
+                        thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                        photo['thumbnail'] = thumbnail
                         
                         # Reset editor state
                         st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
