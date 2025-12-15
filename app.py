@@ -520,7 +520,7 @@ class FieldmapPage(BasePage):
                 
                 # Display photo editor component when requested
                 if st.session_state.show_editor:
-                    st.info("Use the editor below to annotate your photo. Click 'Edit Photo' to open the editor, then use the tools to draw. Click 'Save' when done or 'Cancel' to discard changes.")
+                    st.info("Use the annotation tools below. Click Save to apply changes or Cancel to discard.")
                     
                     # Call the photo editor component
                     editor_result = photo_editor(

@@ -78,7 +78,7 @@
         <div class="loading" id="loadingText">Loading editor...</div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@latest/dist/streamlit-component-lib.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@2.0.0/dist/streamlit-component-lib.js"></script>
     <script>
         const Streamlit = window.Streamlit;
         let markerArea = null;
@@ -148,12 +148,9 @@
             markerArea.addEventListener('render', (event) => {
                 loadingText.classList.remove('active');
                 
-                // event.dataUrl contains the edited image as data URL
-                const pngDataUrl = event.dataUrl;
-                
                 // Send result back to Python
                 Streamlit.setComponentValue({
-                    pngDataUrl: pngDataUrl,
+                    pngDataUrl: event.dataUrl,
                     saved: true
                 });
             });
