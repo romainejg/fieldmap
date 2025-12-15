@@ -49,22 +49,43 @@ class GoogleAuthHelper:
             return None
     
     def _get_redirect_uri(self):
-        """Get the redirect URI from secrets or environment."""
-        # Try Streamlit secrets first
+        """
+        Get the redirect URI dynamically from APP_BASE_URL or fallback to legacy config.
+        
+        Priority:
+        1. APP_BASE_URL from secrets (recommended for Streamlit Cloud)
+        2. GOOGLE_REDIRECT_URI from secrets (legacy)
+        3. Environment variables
+        4. Default to localhost for local dev
+        """
+        # Try APP_BASE_URL first (recommended approach)
+        try:
+            app_base_url = st.secrets.get("APP_BASE_URL")
+            if app_base_url:
+                return app_base_url
+        except Exception:
+            pass
+        
+        # Fallback to APP_BASE_URL from environment
+        app_base_url = os.environ.get("APP_BASE_URL")
+        if app_base_url:
+            return app_base_url
+        
+        # Try legacy GOOGLE_REDIRECT_URI from secrets
         try:
             redirect_uri = st.secrets.get("GOOGLE_REDIRECT_URI")
+            if redirect_uri:
+                return redirect_uri
         except Exception:
-            redirect_uri = None
+            pass
         
         # Fallback to environment variable
-        if not redirect_uri:
-            redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI")
+        redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI")
+        if redirect_uri:
+            return redirect_uri
         
         # Default for local development
-        if not redirect_uri:
-            redirect_uri = "http://localhost:8501"
-        
-        return redirect_uri
+        return "http://localhost:8501"
     
     def _get_stored_token(self):
         """Get stored token from session_state."""
