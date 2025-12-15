@@ -1,7 +1,7 @@
 """
 Fieldmap - Cadaver Lab Photo Annotation App
 A Streamlit-based mobile web app for biomedical engineers to capture, annotate, and organize photos
-Refactored with OOP architecture
+Refactored with OOP architecture and Google Drive integration
 """
 
 import streamlit as st
@@ -15,6 +15,8 @@ import numpy as np
 import logging
 from components.photo_editor import photo_editor, decode_image_from_dataurl
 from streamlit_sortables import sort_items
+from google_auth import GoogleAuthHelper
+from storage import LocalFolderStorage, GoogleDriveStorage
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -129,7 +131,14 @@ st.markdown("""
 class SessionStore:
     """Manages session state and CRUD operations for sessions and photos"""
     
-    def __init__(self):
+    def __init__(self, storage_backend=None):
+        """
+        Initialize SessionStore with optional storage backend.
+        
+        Args:
+            storage_backend: Optional PhotoStorage instance for persistent storage
+        """
+        self.storage = storage_backend
         self._initialize_state()
     
     def _initialize_state(self):
@@ -148,6 +157,8 @@ class SessionStore:
             st.session_state.camera_photo_hash = None
         if 'camera_key' not in st.session_state:
             st.session_state.camera_key = 0
+        if 'use_cloud_storage' not in st.session_state:
+            st.session_state.use_cloud_storage = False
     
     @property
     def sessions(self):
@@ -179,19 +190,84 @@ class SessionStore:
     def add_photo(self, image, session_name, comment=""):
         """Add a photo with metadata to a session"""
         st.session_state.photo_counter += 1
+        photo_id = st.session_state.photo_counter
         
         # Create thumbnail for efficient gallery display
         thumbnail = image.copy()
         thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
         
+        # Optionally save to storage backend
+        storage_uri = None
+        if self.storage and st.session_state.get('use_cloud_storage', False):
+            try:
+                storage_uri = self.storage.save_image(session_name, photo_id, image)
+            except Exception as e:
+                logger.warning(f"Failed to save to storage: {e}")
+        
         photo_data = {
-            'id': st.session_state.photo_counter,
+            'id': photo_id,
             'original_image': image.copy(),
             'current_image': image.copy(),
             'thumbnail': thumbnail,  # Pre-generated thumbnail
             'comment': comment,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'has_annotations': False
+            'has_annotations': False,
+            'source_photo_id': None,  # None for original photos
+            'variant': 'original',  # "original" or "annotated"
+            'storage_uri': storage_uri  # URI in cloud storage (if any)
+        }
+        st.session_state.sessions[session_name].append(photo_data)
+        return photo_data['id']
+    
+    def add_derived_photo(self, base_photo_id, session_name, image, comment=None):
+        """
+        Create a new photo derived from an existing photo (e.g., annotated version).
+        
+        Args:
+            base_photo_id: ID of the source photo
+            session_name: Session to add the derived photo to
+            image: PIL Image of the derived photo
+            comment: Optional comment (defaults to base photo's comment)
+        
+        Returns:
+            New photo ID
+        """
+        # Get the base photo
+        base_photo = self.get_photo(base_photo_id, session_name)
+        if not base_photo:
+            raise ValueError(f"Base photo {base_photo_id} not found in session {session_name}")
+        
+        # Increment counter
+        st.session_state.photo_counter += 1
+        photo_id = st.session_state.photo_counter
+        
+        # Create thumbnail for efficient gallery display
+        thumbnail = image.copy()
+        thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
+        
+        # Use base photo's comment if not provided
+        if comment is None:
+            comment = base_photo['comment']
+        
+        # Optionally save to storage backend
+        storage_uri = None
+        if self.storage and st.session_state.get('use_cloud_storage', False):
+            try:
+                storage_uri = self.storage.save_image(session_name, photo_id, image)
+            except Exception as e:
+                logger.warning(f"Failed to save to storage: {e}")
+        
+        photo_data = {
+            'id': photo_id,
+            'original_image': image.copy(),  # For derived photos, this is the annotated version
+            'current_image': image.copy(),
+            'thumbnail': thumbnail,
+            'comment': comment,
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'has_annotations': True,  # Derived photos are annotated by definition
+            'source_photo_id': base_photo_id,  # Link to original
+            'variant': 'annotated',
+            'storage_uri': storage_uri  # URI in cloud storage (if any)
         }
         st.session_state.sessions[session_name].append(photo_data)
         return photo_data['id']
@@ -391,16 +467,18 @@ class FieldmapPage(BasePage):
                         try:
                             edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
                             
-                            # Update the photo
-                            last_photo['current_image'] = edited_image
-                            last_photo['has_annotations'] = True
+                            # Create a NEW derived photo instead of modifying the original
+                            new_photo_id = self.session_store.add_derived_photo(
+                                base_photo_id=last_photo['id'],
+                                session_name=self.session_store.current_session,
+                                image=edited_image,
+                                comment=last_photo['comment']
+                            )
                             
-                            # Regenerate thumbnail for updated image
-                            thumbnail = edited_image.copy()
-                            thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                            last_photo['thumbnail'] = thumbnail
+                            # Update last_saved_photo_id to point to the new annotated photo
+                            st.session_state.last_saved_photo_id = new_photo_id
                             
-                            st.success("Photo updated with annotations!")
+                            st.success(f"Annotated copy created! (Photo #{new_photo_id})")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error processing edited image: {str(e)}")
@@ -427,8 +505,8 @@ class GalleryPage(BasePage):
         self._render_draggable_view()
     
     def _render_draggable_view(self):
-        """Render draggable view with organization board and compact photo selector"""
-        st.info("📱 Drag photos between sessions to organize them.")
+        """Render draggable view with photo thumbnails as tiles"""
+        st.info("📱 Drag photos between sessions to organize them. Click a tile to view details.")
         
         # Build the list of containers with items
         sortable_containers = []
@@ -439,8 +517,9 @@ class GalleryPage(BasePage):
             photos = self.session_store.sessions[session_name]
             items = []
             for photo in photos:
-                # Use photo ID as label (streamlit-sortables doesn't support HTML in labels)
-                item_id = f"Photo #{photo['id']}"
+                # Use photo ID with emoji badge for annotated photos
+                variant_badge = " 📝" if photo.get('variant') == 'annotated' else ""
+                item_id = f"Photo #{photo['id']}{variant_badge}"
                 items.append(item_id)
                 original_structure[item_id] = {
                     'photo_id': photo['id'],
@@ -469,9 +548,9 @@ class GalleryPage(BasePage):
             width: 100px;
             height: 100px;
             text-align: center;
-            font-size: 12px;
+            font-size: 11px;
             overflow: hidden;
-            line-height: 84px;
+            line-height: 1.2;
         }
         .sortable-item:hover {
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
@@ -537,63 +616,84 @@ class GalleryPage(BasePage):
                 st.success("✓ Photos reorganized!")
                 st.rerun()
         
-        # Compact photo selector for viewing details (integrated with draggable board)
+        # Clickable thumbnails for selecting photos
         st.divider()
-        st.markdown("**Select a photo to view details**")
+        st.markdown("**Click a photo to view details:**")
         
-        # Render thumbnails in compact collapsible sections per session
+        # Render thumbnails in a grid per session
         for session_name in sorted(self.session_store.sessions.keys()):
             photos = self.session_store.sessions[session_name]
             if photos:
-                with st.expander(f"{session_name}", expanded=False):
-                    cols_per_row = 6
-                    for i in range(0, len(photos), cols_per_row):
-                        cols = st.columns(cols_per_row)
-                        for j in range(cols_per_row):
-                            if i + j < len(photos):
-                                photo = photos[i + j]
-                                with cols[j]:
-                                    # Use pre-generated thumbnail
-                                    if 'thumbnail' in photo and photo['thumbnail']:
-                                        thumb = photo['thumbnail']
-                                    else:
-                                        thumb = photo['current_image'].copy()
-                                        thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                                        photo['thumbnail'] = thumb
-                                    
-                                    st.image(thumb, use_column_width=True)
-                                    if st.button(f"#{photo['id']}", key=f"select_{photo['id']}", use_container_width=True):
-                                        st.session_state['selected_photo_id'] = photo['id']
-                                        st.session_state['selected_photo_session'] = session_name
-                                        st.rerun()
+                st.markdown(f"**{session_name}**")
+                cols_per_row = 6
+                for i in range(0, len(photos), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(photos):
+                            photo = photos[i + j]
+                            with cols[j]:
+                                # Use pre-generated thumbnail
+                                if 'thumbnail' in photo and photo['thumbnail']:
+                                    thumb = photo['thumbnail']
+                                else:
+                                    thumb = photo['current_image'].copy()
+                                    thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                                    photo['thumbnail'] = thumb
+                                
+                                st.image(thumb, use_column_width=True)
+                                
+                                # Add variant badge
+                                variant_badge = "📝" if photo.get('variant') == 'annotated' else ""
+                                button_label = f"{variant_badge}#{photo['id']}" if variant_badge else f"#{photo['id']}"
+                                
+                                if st.button(button_label, key=f"select_{photo['id']}", use_container_width=True):
+                                    st.session_state['gallery_selected'] = {
+                                        'photo_id': photo['id'],
+                                        'session': session_name
+                                    }
+                                    st.rerun()
         
-        # Show details panel if a photo is selected
-        if 'selected_photo_id' in st.session_state and st.session_state.get('selected_photo_id'):
+        # Show details panel in expander if a photo is selected
+        if st.session_state.get('gallery_selected'):
+            selected_info = st.session_state['gallery_selected']
             selected_photo = self.session_store.get_photo(
-                st.session_state['selected_photo_id'],
-                st.session_state.get('selected_photo_session', '')
+                selected_info['photo_id'],
+                selected_info['session']
             )
             if selected_photo:
-                self._render_photo_details(
-                    selected_photo, 
-                    st.session_state.get('selected_photo_session', '')
-                )
-    
+                with st.expander("📸 Photo Details", expanded=True):
+                    self._render_photo_details(selected_photo, selected_info['session'])
     
     def _render_photo_details(self, photo, session_name):
         """Render detailed photo view with edit capabilities"""
-        st.divider()
-        st.subheader(f"Photo {photo['id']} Details")
+        st.subheader(f"Photo #{photo['id']}")
         
         if st.button("✕ Close Details", key=f"close_details_{photo['id']}", type="secondary"):
-            st.session_state['selected_photo_id'] = None
-            st.session_state['selected_photo_session'] = None
+            st.session_state['gallery_selected'] = None
             st.rerun()
+        
+        # Show variant and source info
+        col_meta1, col_meta2 = st.columns(2)
+        with col_meta1:
+            st.caption(f"**Session:** {session_name}")
+            st.caption(f"**Time:** {photo['timestamp']}")
+        with col_meta2:
+            if photo.get('variant') == 'annotated':
+                st.caption(f"**Type:** 📝 Edited")
+                if photo.get('source_photo_id'):
+                    st.caption(f"**Derived from:** Photo #{photo['source_photo_id']}")
+            else:
+                st.caption(f"**Type:** Original")
         
         st.markdown("---")
         
         # Show images
-        if photo['has_annotations']:
+        if photo.get('variant') == 'annotated' and photo.get('source_photo_id'):
+            # For annotated photos, show the annotated version
+            st.markdown("**Annotated Image:**")
+            st.image(photo['current_image'], use_column_width=True)
+        elif photo['has_annotations']:
+            # Legacy support for old annotated photos
             col_orig, col_curr = st.columns(2)
             with col_orig:
                 st.markdown("**Original:**")
@@ -610,15 +710,12 @@ class GalleryPage(BasePage):
         photo['current_image'].save(buf, format='PNG')
         buf.seek(0)
         st.download_button(
-            label="Download Photo" + (" (with annotations)" if photo['has_annotations'] else ""),
+            label="Download Photo" + (" (annotated)" if photo.get('variant') == 'annotated' or photo['has_annotations'] else ""),
             data=buf,
             file_name=f"photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
             mime="image/png",
             key=f"download_{photo['id']}"
         )
-        
-        st.caption(f"**Session:** {session_name}")
-        st.caption(f"**Time:** {photo['timestamp']}")
         
         st.divider()
         
@@ -647,11 +744,13 @@ class GalleryPage(BasePage):
                 st.rerun()
         
         with col_reset:
-            if st.button("Reset Annotations", key=f"reset_{photo['id']}", type="secondary"):
-                photo['current_image'] = photo['original_image'].copy()
-                photo['has_annotations'] = False
-                st.success("Annotations cleared!")
-                st.rerun()
+            # Only show reset for old-style annotated photos
+            if photo['has_annotations'] and not photo.get('source_photo_id'):
+                if st.button("Reset Annotations", key=f"reset_{photo['id']}", type="secondary"):
+                    photo['current_image'] = photo['original_image'].copy()
+                    photo['has_annotations'] = False
+                    st.success("Annotations cleared!")
+                    st.rerun()
         
         # Display photo editor component when requested
         if st.session_state.get(f'show_gallery_editor_{photo["id"]}', False):
@@ -670,19 +769,24 @@ class GalleryPage(BasePage):
                     try:
                         edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
                         
-                        # Update the photo
-                        photo['current_image'] = edited_image
-                        photo['has_annotations'] = True
-                        
-                        # Regenerate thumbnail for updated image
-                        thumbnail = edited_image.copy()
-                        thumbnail.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                        photo['thumbnail'] = thumbnail
+                        # Create a NEW derived photo instead of modifying the original
+                        new_photo_id = self.session_store.add_derived_photo(
+                            base_photo_id=photo['id'],
+                            session_name=session_name,
+                            image=edited_image,
+                            comment=photo['comment']
+                        )
                         
                         # Reset editor state
                         st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
                         
-                        st.success("Photo updated with annotations!")
+                        # Update selected photo to the new one
+                        st.session_state['gallery_selected'] = {
+                            'photo_id': new_photo_id,
+                            'session': session_name
+                        }
+                        
+                        st.success(f"Annotated copy created! (Photo #{new_photo_id})")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error processing edited image: {str(e)}")
@@ -708,8 +812,7 @@ class GalleryPage(BasePage):
             with col_move_btn:
                 if move_to_session and st.button("Move", key=f"move_btn_{photo['id']}", use_container_width=True):
                     if self.session_store.move_photo(photo['id'], session_name, move_to_session):
-                        st.session_state['selected_photo_id'] = None
-                        st.session_state['selected_photo_session'] = None
+                        st.session_state['gallery_selected'] = None
                         st.success(f"Moved to {move_to_session}!")
                         st.rerun()
         else:
@@ -720,8 +823,7 @@ class GalleryPage(BasePage):
         # Delete photo
         if st.button("🗑️ Delete Photo", key=f"delete_{photo['id']}", type="secondary"):
             if self.session_store.delete_photo(photo['id'], session_name):
-                st.session_state['selected_photo_id'] = None
-                st.session_state['selected_photo_session'] = None
+                st.session_state['gallery_selected'] = None
                 st.success("Photo deleted!")
                 st.rerun()
 
@@ -735,19 +837,74 @@ class AboutPage(BasePage):
         A mobile-optimized web app for cadaver lab photo documentation and annotation.
         
         **Key Features:**
-        - Capture and annotate photos with freehand drawing
-        - Organize photos into sessions
-        - Export data to Excel
+        - 📸 Capture and annotate photos with freehand drawing
+        - 📁 Organize photos into sessions
+        - 📝 Create annotated copies (keeps originals unchanged)
+        - ☁️ Optional Google Drive integration for cloud storage
+        - 📊 Export data to Excel
+        - 🔐 Secure Google authentication
         
-        **Version:** 2.0
+        **Version:** 3.0
+        
+        ---
+        
+        ### Google Drive Integration
+        
+        To enable Google Drive storage:
+        
+        1. **Set up Google Cloud Project:**
+           - Go to [Google Cloud Console](https://console.cloud.google.com/)
+           - Create a new project or select an existing one
+           - Enable Google Drive API
+        
+        2. **Create OAuth2 Credentials:**
+           - Navigate to APIs & Services → Credentials
+           - Create OAuth2 Client ID (Desktop app)
+           - Download credentials as `credentials.json`
+        
+        3. **Place Credentials:**
+           - Put `credentials.json` in the app directory
+           - Click "Sign in with Google" in the sidebar
+           - Authorize the app to access your Google Drive
+        
+        4. **Enable Cloud Storage:**
+           - Toggle "Save photos to Google Drive" in the sidebar
+           - Photos will be automatically saved to Fieldmap folder
+        
+        ---
+        
+        ### How Photo Editing Works
+        
+        When you edit a photo, the app creates a **new annotated copy** while keeping the original unchanged:
+        
+        - ✅ Original photo remains pristine
+        - ✅ Annotated copy links back to original
+        - ✅ Multiple edits create multiple copies
+        - ✅ Easy to track photo provenance
+        
+        This ensures you never lose your original data!
         """)
+
 
 
 class App:
     """Main application class that orchestrates the UI and routing"""
     
     def __init__(self):
-        self.session_store = SessionStore()
+        # Initialize Google authentication
+        self.google_auth = GoogleAuthHelper()
+        
+        # Initialize storage backend based on authentication
+        storage_backend = None
+        if self.google_auth.is_authenticated() and st.session_state.get('use_cloud_storage', False):
+            try:
+                storage_backend = GoogleDriveStorage()
+                logger.info("Google Drive storage initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Google Drive storage: {e}")
+                st.warning(f"⚠️ Could not connect to Google Drive: {str(e)}")
+        
+        self.session_store = SessionStore(storage_backend=storage_backend)
         self.pages = {
             'Fieldmap': FieldmapPage(self.session_store),
             'Gallery': GalleryPage(self.session_store),
@@ -787,6 +944,34 @@ class App:
                 label_visibility="collapsed"
             )
             self.session_store.current_page = selected_page
+            
+            # Google authentication UI
+            self.google_auth.render_auth_ui()
+            
+            # Cloud storage toggle (only if authenticated)
+            if self.google_auth.is_authenticated():
+                st.sidebar.markdown("---")
+                st.sidebar.markdown("### ☁️ Storage Settings")
+                use_cloud = st.sidebar.checkbox(
+                    "Save photos to Google Drive",
+                    value=st.session_state.get('use_cloud_storage', False),
+                    key="cloud_storage_toggle",
+                    help="When enabled, photos are automatically saved to your Google Drive"
+                )
+                
+                if use_cloud != st.session_state.get('use_cloud_storage', False):
+                    st.session_state.use_cloud_storage = use_cloud
+                    # Reinitialize storage if needed
+                    if use_cloud:
+                        try:
+                            self.session_store.storage = GoogleDriveStorage()
+                            st.sidebar.success("✅ Google Drive enabled")
+                        except Exception as e:
+                            st.sidebar.error(f"Failed to enable Google Drive: {e}")
+                            st.session_state.use_cloud_storage = False
+                    else:
+                        self.session_store.storage = None
+                        st.sidebar.info("💾 Photos stored in memory only")
     
     def run(self):
         """Main application entry point"""

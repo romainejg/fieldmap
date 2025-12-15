@@ -211,10 +211,15 @@ __marimo__/
 .streamlit/secrets.toml
 .streamlit/credentials.toml
 
+# Google OAuth
+credentials.json
+token.pickle
+
 # Application specific
 sessions/
 uploads/
 exports/
+data/
 *.xlsx
 *.xls
 test_app.py
