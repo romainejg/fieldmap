@@ -102,10 +102,18 @@
 - **Click to Expand**: View full details and manage each photo
 - **Delete Photos**: Remove unwanted images
 
-### 4. Annotations
+### 4. Annotations (v2.0 - New Simplified Approach)
 - **Comments**: Add descriptive text to each photo
-- **Drawing Tools**: Draw on photos with various tools
-- **Edit Anytime**: Update comments as needed
+- **Direct Annotation Tools**: Add markers directly on photos
+  - ↗️ Arrows for pointing to features
+  - ⭕ Circles for highlighting areas
+  - ⬜ Boxes for marking regions
+  - 📝 Text labels with background
+- **Simple Controls**: Color picker, line width, position slider
+- **Incremental Building**: Add multiple annotations one at a time
+- **Reset Function**: Restore original image anytime
+- **Dual View**: See both original and annotated versions
+- **Edit Anytime**: Update comments and add more annotations
 
 ### 5. Data Export
 - **Excel Format**: Export all data to Excel
