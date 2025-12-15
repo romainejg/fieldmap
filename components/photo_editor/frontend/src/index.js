@@ -98,23 +98,34 @@ function showMarkerArea() {
             mj.FrameMarker
         ];
 
+        // Helper function to send saved image back to Streamlit
+        function sendSaved(dataUrl) {
+            logDebug("Sending saved image back to Streamlit. length=" + (dataUrl ? dataUrl.length : 0));
+            Streamlit.setComponentValue({ saved: true, pngDataUrl: dataUrl });
+            Streamlit.setFrameHeight();
+        }
+
         markerArea.addEventListener('render', (event) => {
-            logDebug("Editor saved, data URL length: " + (event.dataUrl ? event.dataUrl.length : 0));
+            logDebug("render event fired");
             loadingText.classList.remove('active');
-            Streamlit.setComponentValue({
-                pngDataUrl: event.dataUrl,
-                saved: true
-            });
+            sendSaved(event.dataUrl);
+        });
+
+        markerArea.addEventListener('rendered', (event) => {
+            logDebug("rendered event fired");
+            loadingText.classList.remove('active');
+            sendSaved(event.dataUrl);
         });
 
         markerArea.addEventListener('close', () => {
-            logDebug("Editor closed without saving");
+            logDebug("close event fired");
             loadingText.classList.remove('active');
             Streamlit.setComponentValue({
                 cancelled: true,
                 saved: false,
                 pngDataUrl: null
             });
+            Streamlit.setFrameHeight();
         });
 
         // Try popup mode first, fallback to inline if it fails
