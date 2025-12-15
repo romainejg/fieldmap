@@ -853,7 +853,7 @@ class App:
                 logo_path = Path(__file__).parent / "assets" / "logo.png"
                 if logo_path.exists():
                     logo_image = Image.open(logo_path)
-                    st.image(logo_image, use_container_width=True)
+                    st.image(logo_image, use_column_width=True)
                 else:
                     st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
                     st.warning("Logo not found at assets/logo.png")
