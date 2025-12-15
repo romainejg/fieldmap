@@ -58,7 +58,7 @@ def photo_editor(image, key=None):
         image_data=image_data,
         key=key,
         default=None,
-        height=800,
+        height=1000,
         nonce=str(time.time())
     )
     

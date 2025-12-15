@@ -5,6 +5,26 @@ let markerArea = null;
 let imageLoaded = false;
 let lastImageData = null;
 
+// Add global error handlers for visibility
+window.onerror = function(message, source, lineno, colno, error) {
+    const statusText = document.getElementById('statusText');
+    if (statusText) {
+        statusText.textContent = `Error: ${message} at ${source}:${lineno}`;
+        statusText.classList.add('active');
+    }
+    console.error('Global error:', message, error);
+    return false;
+};
+
+window.addEventListener('unhandledrejection', function(event) {
+    const statusText = document.getElementById('statusText');
+    if (statusText) {
+        statusText.textContent = `Unhandled promise rejection: ${event.reason}`;
+        statusText.classList.add('active');
+    }
+    console.error('Unhandled rejection:', event.reason);
+});
+
 function onRender(event) {
     const data = event.detail;
     
@@ -43,16 +63,23 @@ function onRender(event) {
         const h = Math.max(700, targetImage.getBoundingClientRect().height + 200);
         Streamlit.setFrameHeight(h);
         
-        // Automatically open the marker.js editor after a brief delay
-        // to ensure all resources are ready
-        setTimeout(() => {
-            showMarkerArea();
-        }, 150);
+        // Use requestAnimationFrame + setTimeout for proper timing
+        // Ensures layout is calculated and DOM is ready before showing editor
+        requestAnimationFrame(() => {
+            setTimeout(() => {
+                showMarkerArea();
+            }, 50); // Small delay allows Streamlit iframe to stabilize
+        });
     };
     
     targetImage.onerror = function() {
         console.error('Failed to load image');
         imageLoaded = false;
+        const statusText = document.getElementById('statusText');
+        if (statusText) {
+            statusText.textContent = 'Failed to load image';
+            statusText.classList.add('active');
+        }
     };
     
     // Set image source (should be base64 data URL)
@@ -67,18 +94,32 @@ function showMarkerArea() {
 
         const targetImage = document.getElementById('targetImage');
         const loadingText = document.getElementById('loadingText');
+        const statusText = document.getElementById('statusText');
         loadingText.classList.add('active');
 
         const mj = window.markerjs2 || window.markerjs;
         if (!mj) {
             loadingText.classList.remove('active');
             loadingText.textContent = 'Marker.js failed to load.';
+            if (statusText) {
+                statusText.textContent = 'Marker.js not loaded - library missing';
+                statusText.classList.add('active');
+            }
             console.error('Marker.js global not found', window);
             return;
         }
 
         markerArea = new mj.MarkerArea(targetImage);
-        markerArea.settings.displayMode = 'popup';
+        
+        // Force inline mode to render inside iframe
+        markerArea.settings.displayMode = 'inline';
+        
+        // Set target root for inline UI
+        const editorHost = document.getElementById('editorHost');
+        if (editorHost) {
+            markerArea.settings.targetRoot = editorHost;
+        }
+        
         markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
         markerArea.uiStyleSettings.toolbarColor = '#ffffff';
 
@@ -130,8 +171,13 @@ function showMarkerArea() {
         loadingText.classList.remove('active');
     } catch (err) {
         const loadingText = document.getElementById('loadingText');
+        const statusText = document.getElementById('statusText');
         loadingText.classList.remove('active');
         loadingText.textContent = 'Editor failed to start. Check console.';
+        if (statusText) {
+            statusText.textContent = `Editor error: ${err.message}`;
+            statusText.classList.add('active');
+        }
         console.error(err);
     }
 }
