@@ -864,7 +864,7 @@ class App:
             
             # App title and subtitle
             st.markdown('<div class="sidebar-title">Fieldmap</div>', unsafe_allow_html=True)
-            st.markdown('<div class="sidebar-subtitle">Lab Photo Documentation</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sidebar-subtitle">Documentation support for the cadaver lab.</div>', unsafe_allow_html=True)
             
             # Navigation section with label
             st.markdown('<div class="sidebar-section-label">Sections</div>', unsafe_allow_html=True)
