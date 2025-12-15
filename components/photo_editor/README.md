@@ -8,23 +8,51 @@ This component allows users to edit photos directly by drawing annotations on th
 
 ## Architecture
 
-### Frontend (`components/photo_editor/frontend/index.html`)
-- Loads marker.js 2 from CDN
+### Frontend Build Structure
+
+The frontend is now a properly bundled Streamlit component:
+
+- **Source**: `components/photo_editor/frontend/src/`
+  - `index.html` - HTML template with CDN-loaded marker.js
+  - `index.js` - Main JavaScript with Streamlit integration
+  
+- **Build Output**: `components/photo_editor/frontend/build/`
+  - `index.html` - Minified HTML
+  - `main.js` - Webpack bundled JavaScript with streamlit-component-lib
+  - `main.js.LICENSE.txt` - License information
+
+### Frontend Features
+- Integrates with Streamlit using `streamlit-component-lib`
+- Loads marker.js 2 from CDN (with integrity hash for security)
 - Automatically opens marker.js editor when photo loads
 - Provides annotation tools: Freehand, Arrow, Line, Text, Ellipse, Frame
 - On save, exports the annotated image as a PNG data URL
 - Returns the result to Python via `Streamlit.setComponentValue()`
+- Dynamic frame height adjustment based on image size
 
 ### Backend (`components/photo_editor/__init__.py`)
 - `photo_editor(image, key)`: Main component function
   - Accepts a PIL Image
   - Converts to PNG and base64 encodes it
   - Passes to frontend as data URL
+  - Uses build directory when available, falls back to dev directory
   - Returns editor result when user saves/cancels
   
 - `decode_image_from_dataurl(data_url)`: Helper function
   - Decodes a data URL back to PIL Image
   - Used to convert the edited image from marker.js
+
+## Building the Frontend
+
+To rebuild the frontend after making changes:
+
+```bash
+cd components/photo_editor/frontend
+npm install
+npm run build
+```
+
+The build artifacts in `frontend/build/` are committed to the repository, so the component works immediately on Streamlit Cloud without requiring a build step during deployment.
 
 ## Integration in app.py
 
@@ -82,7 +110,22 @@ if st.session_state[f'show_gallery_editor_{photo["id"]}']:
 ## Technical Details
 
 ### Component Declaration
-Uses `streamlit.components.v1.declare_component()` with a local path to the frontend directory.
+Uses `streamlit.components.v1.declare_component()` with the build directory path for production:
+
+```python
+from pathlib import Path
+import streamlit.components.v1 as components
+
+_COMPONENT_DIR = Path(__file__).parent
+_BUILD_DIR = _COMPONENT_DIR / "frontend" / "build"
+_DEV_DIR = _COMPONENT_DIR / "frontend"
+
+# Use build directory if it exists, otherwise use dev directory
+if _BUILD_DIR.exists():
+    _component_func = components.declare_component("photo_editor", path=str(_BUILD_DIR))
+else:
+    _component_func = components.declare_component("photo_editor", path=str(_DEV_DIR))
+```
 
 ### Data Flow
 1. Python → Frontend: Base64-encoded PNG data URL
@@ -95,8 +138,14 @@ Uses `streamlit.components.v1.declare_component()` with a local path to the fron
    ```
 
 ### Dependencies
-- **Frontend**: marker.js 2 (via CDN), streamlit-component-lib (via CDN)
-- **Backend**: streamlit>=1.28, Pillow
+- **Frontend**: 
+  - marker.js 2 (via CDN with integrity hash)
+  - streamlit-component-lib (bundled via webpack)
+  - React (bundled via webpack)
+  - Apache Arrow (for dataframe support)
+- **Backend**: 
+  - streamlit>=1.28
+  - Pillow
 
 ## Error Handling
 
