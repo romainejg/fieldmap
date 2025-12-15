@@ -6,7 +6,7 @@ Refactored with OOP architecture
 
 import streamlit as st
 import pandas as pd
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import io
 from datetime import datetime
 from pathlib import Path
@@ -183,8 +183,7 @@ class SessionStore:
             'current_image': image.copy(),
             'comment': comment,
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'has_annotations': False,
-            'draw_version': 0
+            'has_annotations': False
         }
         st.session_state.sessions[session_name].append(photo_data)
         return photo_data['id']
@@ -251,136 +250,7 @@ class SessionStore:
 
 class Annotator:
     """Handles image annotation operations"""
-    
-    @staticmethod
-    def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="", position_percent=0.5):
-        """
-        Draw a simple annotation directly on the image using PIL.
-        
-        Args:
-            image: PIL Image object
-            annotation_type: Type of annotation ('arrow', 'circle', 'box', 'text')
-            color: Color in hex format (e.g., '#FF0000')
-            stroke_width: Width of the stroke
-            text: Text to add (for text annotations)
-            position_percent: Horizontal position on image (0.0=left to 1.0=right)
-        
-        Returns:
-            PIL Image with annotation drawn
-        """
-        img_copy = image.copy()
-        if img_copy.mode != 'RGB':
-            img_copy = img_copy.convert('RGB')
-        
-        draw = ImageDraw.Draw(img_copy)
-        width, height = img_copy.size
-        
-        center_x = int(width * position_percent)
-        center_y = int(height * 0.5)
-        
-        if annotation_type == 'arrow':
-            start_x, start_y = center_x, int(height * 0.2)
-            end_x, end_y = center_x, int(height * 0.4)
-            
-            draw.line([(start_x, start_y), (end_x, end_y)], fill=color, width=stroke_width)
-            
-            arrow_size = stroke_width * 3
-            draw.polygon([
-                (end_x, end_y),
-                (end_x - arrow_size, end_y - arrow_size),
-                (end_x + arrow_size, end_y - arrow_size)
-            ], fill=color)
-        
-        elif annotation_type == 'circle':
-            radius = min(width, height) // 8
-            draw.ellipse([
-                center_x - radius, center_y - radius,
-                center_x + radius, center_y + radius
-            ], outline=color, width=stroke_width)
-        
-        elif annotation_type == 'box':
-            box_size = min(width, height) // 6
-            draw.rectangle([
-                center_x - box_size, center_y - box_size,
-                center_x + box_size, center_y + box_size
-            ], outline=color, width=stroke_width)
-        
-        elif annotation_type == 'text' and text:
-            font_paths = [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/System/Library/Fonts/Helvetica.ttc",
-                "C:\\Windows\\Fonts\\arial.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-            ]
-            
-            font = None
-            font_size = max(20, width // 30)
-            
-            for font_path in font_paths:
-                try:
-                    font = ImageFont.truetype(font_path, size=font_size)
-                    break
-                except (IOError, OSError):
-                    continue
-            
-            if font is None:
-                font = ImageFont.load_default()
-            
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            
-            text_x = center_x - text_width // 2
-            text_y = int(height * 0.1)
-            
-            padding = 5
-            draw.rectangle([
-                text_x - padding, text_y - padding,
-                text_x + text_width + padding, text_y + text_height + padding
-            ], fill='white', outline=color, width=2)
-            
-            draw.text((text_x, text_y), text, fill=color, font=font)
-        
-        return img_copy
-    
-    @staticmethod
-    def merge_canvas_with_image(background_image, canvas_result):
-        """
-        Merge drawable canvas result with background image.
-        
-        Args:
-            background_image: PIL Image (background)
-            canvas_result: Canvas result from streamlit-drawable-canvas
-        
-        Returns:
-            PIL Image with canvas drawing merged
-        """
-        if canvas_result is None or canvas_result.image_data is None:
-            return background_image
-        
-        # Convert background to RGBA for alpha compositing
-        bg = background_image.copy()
-        if bg.mode != 'RGBA':
-            bg = bg.convert('RGBA')
-        
-        # Get canvas drawing layer
-        canvas_array = canvas_result.image_data
-        canvas_img = Image.fromarray(canvas_array.astype('uint8'), 'RGBA')
-        
-        # Resize canvas to match background if needed
-        if canvas_img.size != bg.size:
-            canvas_img = canvas_img.resize(bg.size, Image.Resampling.LANCZOS)
-        
-        # Composite the images
-        result = Image.alpha_composite(bg, canvas_img)
-        
-        # Convert back to RGB
-        if result.mode == 'RGBA':
-            rgb_result = Image.new('RGB', result.size, (255, 255, 255))
-            rgb_result.paste(result, mask=result.split()[3])
-            return rgb_result
-        
-        return result
+    pass
 
 
 class BasePage:
