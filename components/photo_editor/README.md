@@ -10,8 +10,7 @@ This component allows users to edit photos directly by drawing annotations on th
 
 ### Frontend (`components/photo_editor/frontend/index.html`)
 - Loads marker.js 2 from CDN
-- Displays the photo in an `<img>` element
-- Launches marker.js editor when "Edit Photo" button is clicked
+- Automatically opens marker.js editor when photo loads
 - Provides annotation tools: Freehand, Arrow, Line, Text, Ellipse, Frame
 - On save, exports the annotated image as a PNG data URL
 - Returns the result to Python via `Streamlit.setComponentValue()`
@@ -29,25 +28,26 @@ This component allows users to edit photos directly by drawing annotations on th
 
 ## Integration in app.py
 
-The component is integrated into both the FieldmapPage and GalleryPage classes to replace the previous canvas-based drawing system:
+The component is integrated into both the FieldmapPage and GalleryPage classes:
 
 ```python
 from components.photo_editor import photo_editor, decode_image_from_dataurl
 
 # In FieldmapPage.render():
-if st.session_state.show_editor:
-    editor_result = photo_editor(
-        image=last_photo['current_image'],
-        key=f"photo_editor_{last_photo['id']}"
-    )
-    
-    if editor_result is not None:
-        if editor_result.get('saved') and editor_result.get('pngDataUrl'):
-            edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
-            last_photo['current_image'] = edited_image
-            last_photo['has_annotations'] = True
+# The editor automatically opens when a photo is captured
+editor_result = photo_editor(
+    image=last_photo['current_image'],
+    key=f"photo_editor_{last_photo['id']}"
+)
+
+if editor_result is not None:
+    if editor_result.get('saved') and editor_result.get('pngDataUrl'):
+        edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
+        last_photo['current_image'] = edited_image
+        last_photo['has_annotations'] = True
 
 # In GalleryPage._render_photo_details():
+# User clicks "Edit Photo" button to open editor
 if st.session_state[f'show_gallery_editor_{photo["id"]}']:
     editor_result = photo_editor(
         image=photo['current_image'],
@@ -60,24 +60,24 @@ if st.session_state[f'show_gallery_editor_{photo["id"]}']:
 
 1. User takes a photo with camera or selects a photo from gallery
 2. Photo is saved to session storage with both `original_image` and `current_image`
-3. User clicks "Edit Photo" button
-4. marker.js editor opens showing the current photo
-5. User draws annotations using available tools (freehand, arrows, shapes, text)
-6. User clicks "Save" in marker.js editor
-7. Annotated image is returned to Python
-8. Photo's `current_image` is updated with annotations (original remains untouched)
-9. `has_annotations` flag is set to `True`
-10. User can reset to restore the original image at any time
+3. Photo editor (marker.js) automatically opens showing the current photo
+4. User draws annotations using available tools (freehand, arrows, shapes, text)
+5. User clicks "Save" in marker.js editor
+6. Annotated image is returned to Python
+7. Photo's `current_image` is updated with annotations (original remains untouched)
+8. `has_annotations` flag is set to `True`
+9. User can reset to restore the original image at any time
 
 ## Key Features
 
 - ✅ User draws directly on the photo (not on separate canvas)
 - ✅ Rich set of annotation tools via marker.js
 - ✅ Returns edited PNG image (not just metadata)
-- ✅ Photo remains visible as canvas background at all times
+- ✅ Photo editor automatically opens when photo is captured
 - ✅ Supports cancel operation
 - ✅ Preserves image quality and dimensions
 - ✅ Mobile-friendly interface
+- ✅ No button clicks required - streamlined workflow
 
 ## Technical Details
 
