@@ -1,28 +1,49 @@
 // Import Streamlit component library
 import { Streamlit } from "streamlit-component-lib";
 
+// DEBUG_MODE: Set to true for verbose debugging with minimal initialization
+const DEBUG_MODE = false;
+
 let markerArea = null;
 let imageLoaded = false;
 let lastImageData = null;
 
-// Add global error handlers for visibility
-window.onerror = function(message, source, lineno, colno, error) {
-    const statusText = document.getElementById('statusText');
-    if (statusText) {
-        statusText.textContent = `Error: ${message} at ${source}:${lineno}`;
-        statusText.classList.add('active');
-    }
-    console.error('Global error:', message, error);
-    return false;
-};
+// Enhanced status logging with stack traces (limited to prevent memory leaks)
+const statusLogs = [];
+const MAX_STATUS_LOGS = 50;
 
-window.addEventListener('unhandledrejection', function(event) {
+function setStatus(msg) {
     const statusText = document.getElementById('statusText');
     if (statusText) {
-        statusText.textContent = `Unhandled promise rejection: ${event.reason}`;
+        statusLogs.push(`[${new Date().toISOString().split('T')[1].slice(0, -1)}] ${msg}`);
+        // Keep only the last MAX_STATUS_LOGS entries
+        if (statusLogs.length > MAX_STATUS_LOGS) {
+            statusLogs.shift();
+        }
+        statusText.textContent = statusLogs.join('\n');
         statusText.classList.add('active');
     }
-    console.error('Unhandled rejection:', event.reason);
+    console.log(msg);
+}
+
+// Add global error handlers with detailed stack traces
+window.addEventListener("error", (e) => {
+    setStatus("WINDOW ERROR: " + e.message);
+    if (e.error && e.error.stack) {
+        setStatus(e.error.stack);
+    } else {
+        setStatus("no stack trace available");
+    }
+    return false;
+});
+
+window.addEventListener("unhandledrejection", (e) => {
+    setStatus("PROMISE REJECTION: " + (e.reason || "unknown reason"));
+    if (e.reason && e.reason.stack) {
+        setStatus(e.reason.stack);
+    } else {
+        setStatus("no stack trace available");
+    }
 });
 
 function onRender(event) {
@@ -89,41 +110,61 @@ function onRender(event) {
 function showMarkerArea() {
     try {
         if (!imageLoaded) {
+            if (DEBUG_MODE) setStatus("showMarkerArea: image not loaded yet");
             return;
         }
 
         const targetImage = document.getElementById('targetImage');
         const loadingText = document.getElementById('loadingText');
-        const statusText = document.getElementById('statusText');
         loadingText.classList.add('active');
+
+        // Check if image has naturalWidth/naturalHeight
+        if (!targetImage.naturalWidth || !targetImage.naturalHeight) {
+            setStatus("Image not ready: naturalWidth=" + targetImage.naturalWidth + ", naturalHeight=" + targetImage.naturalHeight);
+            loadingText.classList.remove('active');
+            return;
+        }
+
+        if (DEBUG_MODE) setStatus("Image ready: " + targetImage.naturalWidth + "x" + targetImage.naturalHeight);
 
         const mj = window.markerjs2 || window.markerjs;
         if (!mj) {
             loadingText.classList.remove('active');
             loadingText.textContent = 'Marker.js failed to load.';
-            if (statusText) {
-                statusText.textContent = 'Marker.js not loaded - library missing';
-                statusText.classList.add('active');
-            }
+            setStatus('Marker.js not loaded - library missing');
             console.error('Marker.js global not found', window);
             return;
         }
 
+        if (DEBUG_MODE) {
+            setStatus("mj keys sample: " + Object.keys(mj).slice(0, 20).join(","));
+        }
+
         markerArea = new mj.MarkerArea(targetImage);
         
-        // Force inline mode to render inside iframe
-        markerArea.settings.displayMode = 'inline';
-        
-        // Set target root for inline UI
-        const editorHost = document.getElementById('editorHost');
-        if (editorHost) {
-            markerArea.settings.targetRoot = editorHost;
+        if (DEBUG_MODE) {
+            setStatus("markerArea keys sample: " + Object.keys(markerArea).slice(0, 30).join(","));
+            setStatus("has availableMarkerTypes: " + ("availableMarkerTypes" in markerArea));
+            setStatus("markerArea.availableMarkerTypes type: " + typeof markerArea.availableMarkerTypes);
         }
-        
-        markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
-        markerArea.uiStyleSettings.toolbarColor = '#ffffff';
 
-        // Restrict to only outline/unfilled marker types using safe assignment
+        // Set display mode - use popup for more reliable initialization
+        markerArea.settings.displayMode = 'popup';
+        
+        if (DEBUG_MODE) {
+            // Minimal init in debug mode - no custom UI settings
+            setStatus("Using minimal init (DEBUG_MODE=true)");
+        } else {
+            // Apply custom UI settings only when not in debug mode
+            markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
+            markerArea.uiStyleSettings.toolbarColor = '#ffffff';
+        }
+
+        // Restrict to only outline/unfilled marker types using safe direct assignment
+        // IMPORTANT: Use direct assignment (=) instead of .push() to avoid errors.
+        // If markerArea.availableMarkerTypes is undefined, calling .push() would throw
+        // "Cannot read properties of undefined (reading 'push')".
+        // Direct assignment ensures we create/replace the array safely.
         const tools = [
             mj.FreehandMarker,
             mj.ArrowMarker,
@@ -133,14 +174,19 @@ function showMarkerArea() {
             mj.FrameMarker      // Unfilled square/rectangle
         ].filter(Boolean);
 
+        if (DEBUG_MODE) setStatus("Tools to register: " + tools.length);
+
         // Only assign if the property exists; otherwise do not touch it
+        // HARD RULE: DO NOT use .push() anywhere
         if ("availableMarkerTypes" in markerArea) {
             markerArea.availableMarkerTypes = tools;
+            if (DEBUG_MODE) setStatus("Set markerArea.availableMarkerTypes directly");
         } else if (markerArea.settings && "availableMarkerTypes" in markerArea.settings) {
             markerArea.settings.availableMarkerTypes = tools;
+            if (DEBUG_MODE) setStatus("Set markerArea.settings.availableMarkerTypes directly");
         } else {
             // Do not attempt to set availableMarkerTypes if API doesn't exist
-            console.warn("No availableMarkerTypes API found; leaving defaults");
+            if (DEBUG_MODE) setStatus("No availableMarkerTypes API found; leaving defaults");
         }
 
         // Track whether save has occurred to prevent double cancel
@@ -149,18 +195,21 @@ function showMarkerArea() {
         // Helper function to send saved image back to Streamlit
         function sendSaved(dataUrl) {
             didSave = true;
+            if (DEBUG_MODE) setStatus("Sending saved data to Streamlit");
             Streamlit.setComponentValue({ saved: true, pngDataUrl: dataUrl });
             Streamlit.setFrameHeight();
         }
 
-        // Listen for both render and rendered events (markerjs2 may fire either)
+        // Listen for BOTH render and rendered events (markerjs2 may fire either)
         markerArea.addEventListener('render', (event) => {
             loadingText.classList.remove('active');
+            if (DEBUG_MODE) setStatus("render event fired");
             sendSaved(event.dataUrl);
         });
 
         markerArea.addEventListener('rendered', (event) => {
             loadingText.classList.remove('active');
+            if (DEBUG_MODE) setStatus("rendered event fired");
             sendSaved(event.dataUrl);
         });
 
@@ -168,25 +217,29 @@ function showMarkerArea() {
             loadingText.classList.remove('active');
             // Only send cancelled if save didn't happen
             if (!didSave) {
+                if (DEBUG_MODE) setStatus("close event: no save, sending cancelled");
                 Streamlit.setComponentValue({
                     cancelled: true,
                     saved: false,
                     pngDataUrl: null
                 });
+            } else {
+                if (DEBUG_MODE) setStatus("close event: save already sent");
             }
             Streamlit.setFrameHeight();
         });
 
+        if (DEBUG_MODE) setStatus("About to call markerArea.show()");
         markerArea.show();
+        if (DEBUG_MODE) setStatus("markerArea.show() completed");
         loadingText.classList.remove('active');
     } catch (err) {
         const loadingText = document.getElementById('loadingText');
-        const statusText = document.getElementById('statusText');
         loadingText.classList.remove('active');
         loadingText.textContent = 'Editor failed to start. Check console.';
-        if (statusText) {
-            statusText.textContent = `Editor error: ${err.message}`;
-            statusText.classList.add('active');
+        setStatus(`Editor error: ${err.message}`);
+        if (err.stack) {
+            setStatus(err.stack);
         }
         console.error(err);
     }
