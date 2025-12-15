@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="Fieldmap - Lab Photos",
     page_icon="📸",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # Custom CSS for mobile-friendly UI
@@ -26,7 +26,7 @@ st.markdown("""
         max-width: 100%;
     }
     .main .block-container {
-        padding-top: 2rem;
+        padding-top: 1rem;
         padding-bottom: 2rem;
     }
     .stButton > button {
@@ -49,6 +49,26 @@ st.markdown("""
         display: inline-block;
         margin: 5px 0;
     }
+    .header-logo {
+        text-align: center;
+        padding: 10px 0;
+        border-bottom: 2px solid #e0e0e0;
+        margin-bottom: 20px;
+    }
+    .sidebar-logo {
+        text-align: center;
+        padding: 20px 0;
+    }
+    .sidebar-logo img {
+        max-width: 150px;
+        margin-bottom: 10px;
+    }
+    .sidebar-title {
+        font-size: 1.5em;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -59,6 +79,8 @@ if 'current_session' not in st.session_state:
     st.session_state.current_session = 'Default'
 if 'photo_counter' not in st.session_state:
     st.session_state.photo_counter = 0
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 'Fieldmap'
 
 def draw_annotation_on_image(image, annotation_type, color, stroke_width, text="", position_percent=0.5):
     """
@@ -263,240 +285,55 @@ def export_to_excel():
         return output.getvalue()
     return None
 
-# Main App Title
-st.title("📸 Fieldmap - Cadaver Lab")
-st.markdown("*Photo Annotation & Documentation System*")
-
-# Sidebar for session management
+# Sidebar with logo and navigation
 with st.sidebar:
-    st.header("🗂️ Session Management")
+    # Display logo
+    st.markdown('<div class="sidebar-logo">', unsafe_allow_html=True)
+    try:
+        logo_image = Image.open("/home/runner/work/fieldmap/fieldmap/logo.png")
+        st.image(logo_image, use_column_width=True)
+    except:
+        st.write("📸")  # Fallback if logo not found
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # Create new session
-    with st.expander("➕ Create New Session", expanded=False):
-        new_session_name = st.text_input("Session Name", key="new_session_input")
-        if st.button("Create Session"):
-            if create_new_session(new_session_name):
-                st.success(f"Session '{new_session_name}' created!")
-                st.rerun()
-            else:
-                st.error("Session already exists or invalid name")
+    # App title
+    st.markdown('<div class="sidebar-title">Cadaver Lab</div>', unsafe_allow_html=True)
     
-    # Select current session
-    st.subheader("Current Session")
-    current_session = st.selectbox(
-        "Active Session",
-        options=list(st.session_state.sessions.keys()),
-        index=list(st.session_state.sessions.keys()).index(st.session_state.current_session),
-        key="session_selector"
+    # Navigation
+    st.session_state.current_page = st.selectbox(
+        "Navigation",
+        options=['Fieldmap', 'Gallery', 'About'],
+        index=['Fieldmap', 'Gallery', 'About'].index(st.session_state.current_page),
+        key="navigation_select"
     )
-    st.session_state.current_session = current_session
-    
-    # Session statistics
-    st.metric("Photos in Session", len(st.session_state.sessions[current_session]))
-    total_photos = sum(len(photos) for photos in st.session_state.sessions.values())
-    st.metric("Total Photos", total_photos)
-    
-    # Export functionality
-    st.divider()
-    st.subheader("📊 Export Data")
-    if st.button("Export to Excel"):
-        excel_data = export_to_excel()
-        if excel_data:
-            st.download_button(
-                label="📥 Download Excel File",
-                data=excel_data,
-                file_name=f"fieldmap_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("No data to export")
 
-# Main content area
-tab1, tab2 = st.tabs(["📷 Camera", "🖼️ Gallery"])
+# Main content area based on selected page
+if st.session_state.current_page == 'About':
+    # About page
+    st.title("About Fieldmap")
+    st.markdown("""
+    ## Cadaver Lab Photo Annotation App
+    
+    Fieldmap is a mobile-optimized web application designed for biomedical engineers working in cadaver labs. 
+    This app allows users to capture photos, annotate them, add comments, organize them into sessions, and export data.
+    
+    ### Features
+    
+    - **📸 Photo Capture**: Take photos directly using your mobile device camera
+    - **📝 Annotations**: Draw arrows, circles, boxes, and add text labels to photos
+    - **💬 Comments**: Add descriptive notes to each photo
+    - **🗂️ Session Organization**: Organize photos into different sessions
+    - **📊 Export**: Export all data to Excel for analysis
+    
+    ### Version
+    Fieldmap v2.0 - Biomedical Engineering Lab Documentation System
+    
+    ---
+    *Developed for biomedical engineers and researchers working in cadaver labs and similar settings.*
+    """)
 
-# Initialize auto-save tracking
-if 'last_saved_photo_id' not in st.session_state:
-    st.session_state.last_saved_photo_id = None
-if 'camera_photo_hash' not in st.session_state:
-    st.session_state.camera_photo_hash = None
-if 'camera_key' not in st.session_state:
-    st.session_state.camera_key = 0
-
-# Camera Tab
-with tab1:
-    st.header("Capture Photo")
-    st.info(f"📍 Active Session: **{st.session_state.current_session}**")
-    
-    # Photo upload (camera on mobile)
-    uploaded_file = st.camera_input("Take a photo", key=f"camera_{st.session_state.camera_key}")
-    
-    # Alternative file upload
-    st.markdown("---")
-    st.subheader("Or Upload from Device")
-    file_upload = st.file_uploader("Choose an image", type=['png', 'jpg', 'jpeg'], key=f"file_upload_{st.session_state.camera_key}")
-    
-    # Process uploaded photo
-    image_to_add = uploaded_file if uploaded_file else file_upload
-    
-    if image_to_add is not None:
-        image = Image.open(image_to_add)
-        # Convert image to RGB mode to ensure compatibility
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # Auto-save the photo when captured
-        # Create a unique hash to detect new photos
-        image_bytes = image_to_add.getvalue()
-        current_photo_hash = hashlib.md5(image_bytes).hexdigest()
-        
-        # Only auto-save if this is a new photo (not already saved)
-        if current_photo_hash != st.session_state.camera_photo_hash:
-            photo_id = add_photo_to_session(image, st.session_state.current_session, "")
-            st.session_state.last_saved_photo_id = photo_id
-            st.session_state.camera_photo_hash = current_photo_hash
-            st.success(f"✅ Photo automatically saved to '{st.session_state.current_session}' session! (ID: {photo_id})")
-        
-        # Clear camera button
-        if st.button("📸 Clear Camera - Take Another Photo", type="primary"):
-            st.session_state.camera_key += 1
-            st.session_state.camera_photo_hash = None
-            st.session_state.last_saved_photo_id = None
-            st.rerun()
-        
-        # Show preview with annotation options
-        st.subheader("📸 Preview & Annotate")
-        
-        # Get the saved photo data
-        saved_photo = None
-        if st.session_state.last_saved_photo_id:
-            for photo in st.session_state.sessions[st.session_state.current_session]:
-                if photo['id'] == st.session_state.last_saved_photo_id:
-                    saved_photo = photo
-                    break
-        
-        if saved_photo:
-            # Show current image (with any annotations)
-            st.image(saved_photo['current_image'], caption="Photo Preview", use_column_width=True)
-            
-            # Download button for current image
-            buf = io.BytesIO()
-            saved_photo['current_image'].save(buf, format='PNG')
-            buf.seek(0)
-            st.download_button(
-                label="📥 Download Photo" + (" (with annotations)" if saved_photo['has_annotations'] else ""),
-                data=buf,
-                file_name=f"photo_{saved_photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                mime="image/png",
-                key="download_preview"
-            )
-            
-            st.markdown("### ✏️ Add Notes & Draw")
-            
-            # Add/Edit comment
-            photo_comment = st.text_area(
-                "Notes/Comments:",
-                value=saved_photo['comment'],
-                key="preview_comment",
-                placeholder="Enter a description or note for this photo..."
-            )
-            if st.button("💾 Update Comment"):
-                update_photo_comment(saved_photo['id'], st.session_state.current_session, photo_comment)
-                st.success("Comment updated!")
-                st.rerun()
-            
-            st.divider()
-            
-            # Simple drawing tools
-            st.markdown("#### 🎨 Add Annotations to Photo")
-            st.info("💡 Annotations are added directly to the photo. Use 'Reset' to remove all.")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                annotation_type = st.selectbox(
-                    "Annotation Type:",
-                    options=["arrow", "circle", "box", "text"],
-                    format_func=lambda x: {
-                        "arrow": "↗️ Arrow",
-                        "circle": "⭕ Circle",
-                        "box": "⬜ Box",
-                        "text": "📝 Text"
-                    }[x],
-                    key="preview_annotation_type"
-                )
-            with col2:
-                annotation_color = st.color_picker(
-                    "Color:",
-                    value="#FF0000",
-                    key="preview_color"
-                )
-            
-            stroke_width = st.slider(
-                "Line Width:",
-                min_value=1,
-                max_value=10,
-                value=3,
-                key="preview_stroke"
-            )
-            
-            annotation_text = ""
-            if annotation_type == "text":
-                annotation_text = st.text_input(
-                    "Text to add:",
-                    key="preview_text",
-                    placeholder="Enter text..."
-                )
-            
-            position = st.slider(
-                "Position (left ← → right):",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.5,
-                step=0.1,
-                key="preview_position"
-            )
-            
-            col_add, col_reset = st.columns(2)
-            with col_add:
-                can_add = annotation_type != "text" or annotation_text
-                if st.button("➕ Add Annotation", disabled=not can_add, key="preview_add"):
-                    add_annotation_to_photo(
-                        saved_photo['id'],
-                        st.session_state.current_session,
-                        annotation_type,
-                        annotation_color,
-                        stroke_width,
-                        annotation_text,
-                        position
-                    )
-                    st.success("✅ Annotation added!")
-                    st.rerun()
-            
-            with col_reset:
-                if st.button("🔄 Reset All Annotations", key="preview_reset"):
-                    reset_photo_annotations(saved_photo['id'], st.session_state.current_session)
-                    st.success("Annotations cleared!")
-                    st.rerun()
-            
-            st.divider()
-            
-            # Option to move to a different session
-            st.markdown("### 📦 Organize")
-            move_to_session = st.selectbox(
-                "Move to different session:",
-                options=[s for s in st.session_state.sessions.keys()],
-                index=list(st.session_state.sessions.keys()).index(st.session_state.current_session),
-                key="preview_move_session"
-            )
-            if move_to_session != st.session_state.current_session:
-                if st.button(f"📦 Move to '{move_to_session}'"):
-                    if move_photo(saved_photo['id'], st.session_state.current_session, move_to_session):
-                        st.success(f"Moved to '{move_to_session}'!")
-                        st.session_state.last_saved_photo_id = None
-                        st.session_state.camera_photo_hash = None
-                        st.rerun()
-
-# Gallery Tab
-with tab2:
+elif st.session_state.current_page == 'Gallery':
+    # Gallery page
     st.header("Photo Gallery")
     
     # Filter by session
@@ -517,7 +354,7 @@ with tab2:
             photos_to_display.append((view_session, photo))
     
     if not photos_to_display:
-        st.info("No photos yet. Use the Camera tab to add photos!")
+        st.info("No photos yet. Use the Fieldmap page to capture photos!")
     else:
         st.write(f"**{len(photos_to_display)} photo(s) found**")
         
@@ -695,6 +532,175 @@ with tab2:
                                         st.session_state[f'expand_photo_{photo['id']}'] = False
                                         st.rerun()
 
-# Footer
-st.markdown("---")
-st.caption("Fieldmap v2.0 - Biomedical Engineering Lab Documentation System")
+else:  # Fieldmap page (camera)
+    # Initialize auto-save tracking
+    if 'last_saved_photo_id' not in st.session_state:
+        st.session_state.last_saved_photo_id = None
+    if 'camera_photo_hash' not in st.session_state:
+        st.session_state.camera_photo_hash = None
+    if 'camera_key' not in st.session_state:
+        st.session_state.camera_key = 0
+    
+    # Header with logo
+    st.markdown('<div class="header-logo">', unsafe_allow_html=True)
+    try:
+        logo_image = Image.open("/home/runner/work/fieldmap/fieldmap/logo.png")
+        st.image(logo_image, width=100)
+    except:
+        st.write("📸")  # Fallback if logo not found
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Session management and creation
+    st.subheader("Session")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        # Select current session
+        current_session = st.selectbox(
+            "Active Session",
+            options=list(st.session_state.sessions.keys()),
+            index=list(st.session_state.sessions.keys()).index(st.session_state.current_session),
+            key="fieldmap_session_selector",
+            label_visibility="collapsed"
+        )
+        st.session_state.current_session = current_session
+    
+    with col2:
+        # Create new session button
+        if st.button("➕ New", key="create_session_btn"):
+            st.session_state['show_create_session'] = True
+    
+    # Show session creation form if button clicked
+    if st.session_state.get('show_create_session', False):
+        with st.form("create_session_form"):
+            new_session_name = st.text_input("New Session Name", key="new_session_input")
+            col_submit, col_cancel = st.columns(2)
+            with col_submit:
+                submitted = st.form_submit_button("Create", type="primary")
+                if submitted and new_session_name:
+                    if create_new_session(new_session_name):
+                        st.session_state.current_session = new_session_name
+                        st.session_state['show_create_session'] = False
+                        st.success(f"Session '{new_session_name}' created!")
+                        st.rerun()
+                    else:
+                        st.error("Session already exists or invalid name")
+            with col_cancel:
+                cancel = st.form_submit_button("Cancel")
+                if cancel:
+                    st.session_state['show_create_session'] = False
+                    st.rerun()
+    
+    st.divider()
+    
+    # Camera section
+    st.subheader("Camera")
+    
+    # Photo upload (camera on mobile)
+    uploaded_file = st.camera_input("Take a photo", key=f"camera_{st.session_state.camera_key}")
+    
+    # Process uploaded photo
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+        # Convert image to RGB mode to ensure compatibility
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Auto-save the photo when captured
+        # Create a unique hash to detect new photos
+        image_bytes = uploaded_file.getvalue()
+        current_photo_hash = hashlib.md5(image_bytes).hexdigest()
+        
+        # Only auto-save if this is a new photo (not already saved)
+        if current_photo_hash != st.session_state.camera_photo_hash:
+            photo_id = add_photo_to_session(image, st.session_state.current_session, "")
+            st.session_state.last_saved_photo_id = photo_id
+            st.session_state.camera_photo_hash = current_photo_hash
+            # Increment camera key to allow taking another photo
+            st.session_state.camera_key += 1
+            st.success(f"✅ Photo saved! (ID: {photo_id})")
+            st.rerun()
+    
+    # Show annotation interface for last saved photo
+    if st.session_state.last_saved_photo_id:
+        st.divider()
+        st.subheader("Last Photo")
+        
+        # Get the last saved photo
+        last_photo = None
+        for photo in st.session_state.sessions[st.session_state.current_session]:
+            if photo['id'] == st.session_state.last_saved_photo_id:
+                last_photo = photo
+                break
+        
+        if last_photo:
+            # Add/Edit comment
+            photo_comment = st.text_area(
+                "Notes/Comments:",
+                value=last_photo['comment'],
+                key="last_photo_comment",
+                placeholder="Add notes about this photo..."
+            )
+            if photo_comment != last_photo['comment']:
+                update_photo_comment(last_photo['id'], st.session_state.current_session, photo_comment)
+            
+            st.markdown("#### 🎨 Draw on Photo")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                annotation_type = st.selectbox(
+                    "Type:",
+                    options=["arrow", "circle", "box", "text"],
+                    format_func=lambda x: {
+                        "arrow": "↗️ Arrow",
+                        "circle": "⭕ Circle",
+                        "box": "⬜ Box",
+                        "text": "📝 Text"
+                    }[x],
+                    key="last_photo_annotation_type"
+                )
+            with col2:
+                annotation_color = st.color_picker(
+                    "Color:",
+                    value="#FF0000",
+                    key="last_photo_color"
+                )
+            
+            stroke_width = st.slider(
+                "Line Width:",
+                min_value=1,
+                max_value=10,
+                value=3,
+                key="last_photo_stroke"
+            )
+            
+            annotation_text = ""
+            if annotation_type == "text":
+                annotation_text = st.text_input(
+                    "Text:",
+                    key="last_photo_text",
+                    placeholder="Enter text..."
+                )
+            
+            position = st.slider(
+                "Position:",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.5,
+                step=0.1,
+                key="last_photo_position"
+            )
+            
+            can_add = annotation_type != "text" or annotation_text
+            if st.button("➕ Add Drawing", disabled=not can_add, key="last_photo_add", type="primary"):
+                add_annotation_to_photo(
+                    last_photo['id'],
+                    st.session_state.current_session,
+                    annotation_type,
+                    annotation_color,
+                    stroke_width,
+                    annotation_text,
+                    position
+                )
+                st.success("✅ Drawing added!")
+                st.rerun()
