@@ -134,7 +134,15 @@ class LocalFolderStorage(PhotoStorage):
 class GooglePhotosStorage(PhotoStorage):
     """
     Google Photos storage implementation.
-    NOT IMPLEMENTED YET - placeholder for future functionality.
+    
+    This is a PLACEHOLDER for future functionality.
+    Google Photos integration is not yet implemented.
+    
+    When implemented, this class will:
+    - Authenticate with Google Photos API using OAuth2
+    - Upload images to Google Photos albums
+    - Download images from Google Photos
+    - Maintain metadata and sync state
     """
     
     def __init__(self, credentials_path: Optional[str] = None):
@@ -142,9 +150,15 @@ class GooglePhotosStorage(PhotoStorage):
         Initialize Google Photos storage.
         
         Args:
-            credentials_path: Path to Google Photos API credentials
+            credentials_path: Path to Google Photos API credentials (not used yet)
+        
+        Raises:
+            NotImplementedError: This storage backend is not yet implemented
         """
-        raise NotImplementedError("Google Photos storage is not yet implemented")
+        raise NotImplementedError(
+            "Google Photos storage is not yet implemented. "
+            "Use LocalFolderStorage for now."
+        )
     
     def save_image(self, session_name: str, photo_id: int, pil_image: Image.Image) -> str:
         """Save image to Google Photos (not implemented)"""

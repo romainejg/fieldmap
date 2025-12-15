@@ -86,14 +86,16 @@ def test_derived_photo_workflow():
     print("\nStep 4: Verifying original photo is unchanged...")
     assert original['has_annotations'] is False, "Original should still not have annotations"
     assert original['variant'] == 'original', "Original variant should be unchanged"
-    assert original['current_image'].getpixel((100, 100)) == (255, 255, 255), "Original image should be white"
+    # Check center pixel of original image
+    center_x, center_y = 100, 100  # Center of 200x200 image
+    assert original['current_image'].getpixel((center_x, center_y)) == (255, 255, 255), "Original image should be white"
     print("✓ Original photo remains unchanged")
     
     # Step 5: Verify derived has changes
     print("\nStep 5: Verifying derived photo has annotations...")
     assert derived['has_annotations'] is True, "Derived should have annotations"
     assert derived['variant'] == 'annotated', "Derived should be annotated variant"
-    assert derived['current_image'].getpixel((100, 100)) == (0, 0, 255), "Derived image should be blue"
+    assert derived['current_image'].getpixel((center_x, center_y)) == (0, 0, 255), "Derived image should be blue"
     print("✓ Derived photo has the annotations")
     
     # Step 6: Create another derived photo from the original
