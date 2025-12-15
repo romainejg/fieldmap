@@ -9,6 +9,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+!components/photo_editor/frontend/build/
 develop-eggs/
 dist/
 downloads/
@@ -219,3 +220,7 @@ exports/
 test_app.py
 app_old.py
 gradio_app_backup.py
+
+# Node.js dependencies
+node_modules/
+package-lock.json
