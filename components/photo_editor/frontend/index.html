@@ -70,11 +70,7 @@
 </head>
 <body>
     <div id="container">
-        <img id="targetImage" alt="Photo to edit" />
-        <div class="button-container">
-            <button id="editButton">Edit Photo</button>
-            <button id="cancelButton">Cancel</button>
-        </div>
+        <img id="targetImage" alt="Photo to edit" style="display: none;" />
         <div class="loading" id="loadingText">Loading editor...</div>
     </div>
 
@@ -95,12 +91,16 @@
             const imageData = data.args.image_data;
             const targetImage = document.getElementById('targetImage');
             
-            // Wait for image to load before enabling editor
+            // Wait for image to load before auto-opening editor
             targetImage.onload = function() {
                 imageLoaded = true;
-                document.getElementById('editButton').disabled = false;
                 console.log('Image loaded successfully');
                 Streamlit.setFrameHeight();
+                
+                // Automatically open the marker.js editor
+                setTimeout(() => {
+                    showMarkerArea();
+                }, 500);  // Small delay to ensure everything is ready
             };
             
             targetImage.onerror = function() {
@@ -173,13 +173,6 @@
                 cancelled: true
             });
         }
-
-        // Set up event listeners
-        document.getElementById('editButton').addEventListener('click', showMarkerArea);
-        document.getElementById('cancelButton').addEventListener('click', cancelEditor);
-
-        // Disable edit button until image loads
-        document.getElementById('editButton').disabled = true;
 
         // Register with Streamlit
         Streamlit.setComponentReady();
