@@ -401,95 +401,22 @@ class FieldmapPage(BasePage):
 class GalleryPage(BasePage):
     """Gallery page for viewing and managing photos"""
     
-    def render_photo_card(self, photo, session_name, cols):
-        """Render a single photo card with clean iPhone-like styling"""
-        with cols:
-            st.markdown('<div class="photo-card">', unsafe_allow_html=True)
-            
-            # Thumbnail with container width for responsive sizing
-            st.image(photo['current_image'], use_column_width=True)
-            
-            # Minimal metadata - extract time from timestamp
-            timestamp_parts = photo['timestamp'].split()
-            time_str = timestamp_parts[1] if len(timestamp_parts) > 1 else timestamp_parts[0]
-            
-            st.caption(f"**{session_name}** • ID {photo['id']}")
-            st.caption(time_str)
-            
-            # Move control - compact
-            other_sessions = [s for s in self.session_store.sessions.keys() if s != session_name]
-            if other_sessions:
-                col_move_label, col_move_btn = st.columns([3, 1])
-                with col_move_label:
-                    move_to = st.selectbox(
-                        "Move to",
-                        options=[""] + other_sessions,
-                        key=f"move_select_{photo['id']}",
-                        label_visibility="collapsed"
-                    )
-                with col_move_btn:
-                    if move_to and st.button("Go", key=f"move_btn_{photo['id']}", use_container_width=True):
-                        if self.session_store.move_photo(photo['id'], session_name, move_to):
-                            st.success("Moved!")
-                            st.rerun()
-            
-            if st.button("View", key=f"view_{photo['id']}", use_container_width=True):
-                st.session_state[f'expand_photo_{photo['id']}'] = True
-                st.rerun()
-            
-            if st.session_state.get(f'expand_photo_{photo['id']}', False):
-                self._render_photo_details(photo, session_name)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
-    
     def render(self):
         st.header("Photo Gallery")
         
-        # View mode selector
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            view_session = st.selectbox(
-                "View Session:",
-                options=["All Sessions"] + list(self.session_store.sessions.keys()),
-                key="gallery_session_filter"
-            )
-        with col2:
-            view_mode = st.radio(
-                "View Mode:",
-                options=["Grid", "Draggable"],
-                key="gallery_view_mode",
-                horizontal=True
-            )
+        # Session filter only (no view mode selector)
+        view_session = st.selectbox(
+            "View Session:",
+            options=["All Sessions"] + list(self.session_store.sessions.keys()),
+            key="gallery_session_filter"
+        )
         
-        photos_to_display = []
-        if view_session == "All Sessions":
-            for session_name, photos in self.session_store.sessions.items():
-                for photo in photos:
-                    photos_to_display.append((session_name, photo))
-        else:
-            for photo in self.session_store.sessions.get(view_session, []):
-                photos_to_display.append((view_session, photo))
-        
-        if not photos_to_display:
-            st.info("No photos yet. Use the Fieldmap page to capture photos!")
-        else:
-            st.write(f"**{len(photos_to_display)} photo(s) found**")
-            
-            if view_mode == "Draggable":
-                self._render_draggable_view()
-            else:
-                # Display photos in responsive grid - 4 columns desktop, 2 mobile handled by Streamlit
-                cols_per_row = 4
-                for i in range(0, len(photos_to_display), cols_per_row):
-                    cols = st.columns(cols_per_row)
-                    for j in range(cols_per_row):
-                        if i + j < len(photos_to_display):
-                            session_name, photo = photos_to_display[i + j]
-                            self.render_photo_card(photo, session_name, cols[j])
+        # Always use draggable view with small tiles
+        self._render_draggable_view()
     
     def _render_draggable_view(self):
-        """Render draggable view for moving photos between sessions"""
-        st.info("📱 Drag photos between sessions to organize them. Changes are saved automatically.")
+        """Render draggable view with small tiles and click-for-details"""
+        st.info("📱 Drag photos between sessions to organize them. Click a tile to view details.")
         
         # Build the list of containers with items
         sortable_containers = []
@@ -514,17 +441,23 @@ class GalleryPage(BasePage):
                 "items": items
             })
         
-        # Custom CSS for better appearance
+        # Custom CSS for small tiles with thumbnails
         custom_style = """
         .sortable-item {
             background-color: #ffffff;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
-            padding: 12px;
-            margin: 8px 0;
+            padding: 8px;
+            margin: 6px;
             cursor: move;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             transition: box-shadow 0.2s ease;
+            display: inline-block;
+            width: 100px;
+            height: 100px;
+            text-align: center;
+            font-size: 12px;
+            overflow: hidden;
         }
         .sortable-item:hover {
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
@@ -533,7 +466,7 @@ class GalleryPage(BasePage):
             background-color: #f5f5f5;
             border-radius: 8px;
             padding: 12px;
-            min-height: 100px;
+            min-height: 120px;
             margin: 8px 0;
         }
         .sortable-container-header {
@@ -590,137 +523,188 @@ class GalleryPage(BasePage):
                 st.success("✓ Photos reorganized!")
                 st.rerun()
         
-        # Show thumbnails below for reference
+        # Show clickable thumbnails for each session
         st.divider()
-        st.markdown("### Photo Previews")
+        st.markdown("### Photos")
+        
         for session_name in sorted(self.session_store.sessions.keys()):
             photos = self.session_store.sessions[session_name]
             if photos:
-                st.markdown(f"**{session_name}**")
-                cols = st.columns(min(4, len(photos)))
-                for idx, photo in enumerate(photos[:4]):  # Show max 4 thumbnails
-                    with cols[idx]:
-                        st.image(photo['current_image'], caption=f"Photo {photo['id']}", use_column_width=True)
-                if len(photos) > 4:
-                    st.caption(f"... and {len(photos) - 4} more")
+                st.markdown(f"**{session_name}** ({len(photos)} photo{'s' if len(photos) != 1 else ''})")
+                
+                # Display photos as small clickable tiles
+                cols_per_row = 6  # More tiles per row since they're smaller
+                for i in range(0, len(photos), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(photos):
+                            photo = photos[i + j]
+                            with cols[j]:
+                                # Create thumbnail
+                                thumb = photo['current_image'].copy()
+                                thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
+                                
+                                # Display thumbnail
+                                st.image(thumb, use_column_width=True)
+                                
+                                # Click button to view details
+                                if st.button(f"#{photo['id']}", key=f"view_photo_{photo['id']}", use_container_width=True):
+                                    st.session_state['selected_photo_id'] = photo['id']
+                                    st.session_state['selected_photo_session'] = session_name
+                                    st.rerun()
+        
+        # Show details panel if a photo is selected
+        if 'selected_photo_id' in st.session_state and st.session_state.get('selected_photo_id'):
+            selected_photo = self.session_store.get_photo(
+                st.session_state['selected_photo_id'],
+                st.session_state.get('selected_photo_session', '')
+            )
+            if selected_photo:
+                self._render_photo_details(
+                    selected_photo, 
+                    st.session_state.get('selected_photo_session', '')
+                )
+    
     
     def _render_photo_details(self, photo, session_name):
         """Render detailed photo view with edit capabilities"""
-        with st.expander(f"Edit Photo {photo['id']}", expanded=True):
-            if st.button("Close", key=f"close_{photo['id']}"):
-                st.session_state[f'expand_photo_{photo['id']}'] = False
-                st.rerun()
-            
-            st.markdown("---")
-            
-            # Show images
-            if photo['has_annotations']:
-                col_orig, col_curr = st.columns(2)
-                with col_orig:
-                    st.markdown("**Original:**")
-                    st.image(photo['original_image'], use_column_width=True)
-                with col_curr:
-                    st.markdown("**With Annotations:**")
-                    st.image(photo['current_image'], use_column_width=True)
-            else:
-                st.markdown("**Image:**")
+        st.divider()
+        st.subheader(f"Photo {photo['id']} Details")
+        
+        if st.button("✕ Close Details", key=f"close_details_{photo['id']}", type="secondary"):
+            st.session_state['selected_photo_id'] = None
+            st.session_state['selected_photo_session'] = None
+            st.rerun()
+        
+        st.markdown("---")
+        
+        # Show images
+        if photo['has_annotations']:
+            col_orig, col_curr = st.columns(2)
+            with col_orig:
+                st.markdown("**Original:**")
+                st.image(photo['original_image'], use_column_width=True)
+            with col_curr:
+                st.markdown("**With Annotations:**")
                 st.image(photo['current_image'], use_column_width=True)
-            
-            # Download button
-            buf = io.BytesIO()
-            photo['current_image'].save(buf, format='PNG')
-            buf.seek(0)
-            st.download_button(
-                label="Download Photo" + (" (with annotations)" if photo['has_annotations'] else ""),
-                data=buf,
-                file_name=f"photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                mime="image/png",
-                key=f"download_{photo['id']}"
-            )
-            
-            st.caption(f"**Session:** {session_name}")
-            st.caption(f"**Time:** {photo['timestamp']}")
-            
-            st.divider()
-            
-            # Edit comment
-            new_comment = st.text_area(
-                "Notes/Comments:",
-                value=photo['comment'],
-                key=f"edit_comment_{photo['id']}",
-                placeholder="Add notes or description..."
-            )
-            if st.button("Update Comment", key=f"update_{photo['id']}"):
-                self.session_store.update_photo_comment(photo['id'], session_name, new_comment)
-                st.success("Comment updated!")
+        else:
+            st.markdown("**Image:**")
+            st.image(photo['current_image'], use_column_width=True)
+        
+        # Download button
+        buf = io.BytesIO()
+        photo['current_image'].save(buf, format='PNG')
+        buf.seek(0)
+        st.download_button(
+            label="Download Photo" + (" (with annotations)" if photo['has_annotations'] else ""),
+            data=buf,
+            file_name=f"photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+            mime="image/png",
+            key=f"download_{photo['id']}"
+        )
+        
+        st.caption(f"**Session:** {session_name}")
+        st.caption(f"**Time:** {photo['timestamp']}")
+        
+        st.divider()
+        
+        # Edit comment
+        new_comment = st.text_area(
+            "Notes/Comments:",
+            value=photo['comment'],
+            key=f"edit_comment_{photo['id']}",
+            placeholder="Add notes or description..."
+        )
+        if st.button("Update Comment", key=f"update_{photo['id']}"):
+            self.session_store.update_photo_comment(photo['id'], session_name, new_comment)
+            st.success("Comment updated!")
+            st.rerun()
+        
+        st.divider()
+        
+        # Drawing tools with marker.js
+        st.markdown("**Add Annotations**")
+        
+        col_edit, col_reset = st.columns(2)
+        with col_edit:
+            # Edit photo button
+            if st.button("Edit Photo", key=f"edit_photo_gallery_{photo['id']}", type="primary"):
+                st.session_state[f'show_gallery_editor_{photo["id"]}'] = True
                 st.rerun()
+        
+        with col_reset:
+            if st.button("Reset Annotations", key=f"reset_{photo['id']}", type="secondary"):
+                photo['current_image'] = photo['original_image'].copy()
+                photo['has_annotations'] = False
+                st.success("Annotations cleared!")
+                st.rerun()
+        
+        # Display photo editor component when requested
+        if st.session_state.get(f'show_gallery_editor_{photo["id"]}', False):
+            st.info("Use the annotation tools below. Click Save to apply changes or Cancel to discard.")
             
-            st.divider()
+            # Call the photo editor component
+            editor_result = photo_editor(
+                image=photo['current_image'],
+                key=f"photo_editor_gallery_{photo['id']}"
+            )
             
-            # Drawing tools with marker.js
-            st.markdown("**Add Annotations**")
-            
-            # Initialize show_gallery_editor state if not present
-            if f'show_gallery_editor_{photo["id"]}' not in st.session_state:
-                st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
-            
-            # Show current photo preview
-            st.image(photo['current_image'], caption="Current Photo", use_column_width=True)
-            
-            col_edit, col_reset = st.columns(2)
-            with col_edit:
-                # Edit photo button
-                if st.button("Edit Photo", key=f"edit_photo_gallery_{photo['id']}", type="primary"):
-                    st.session_state[f'show_gallery_editor_{photo["id"]}'] = True
-                    st.rerun()
-            
-            with col_reset:
-                if st.button("Reset", key=f"reset_{photo['id']}", type="secondary"):
-                    photo['current_image'] = photo['original_image'].copy()
-                    photo['has_annotations'] = False
-                    st.success("Annotations cleared!")
-                    st.rerun()
-            
-            # Display photo editor component when requested
-            if st.session_state[f'show_gallery_editor_{photo["id"]}']:
-                st.info("Use the annotation tools below. Click Save to apply changes or Cancel to discard.")
-                
-                # Call the photo editor component
-                editor_result = photo_editor(
-                    image=photo['current_image'],
-                    key=f"photo_editor_gallery_{photo['id']}"
-                )
-                
-                # Handle editor result
-                if editor_result is not None:
-                    if editor_result.get('saved') and editor_result.get('pngDataUrl'):
-                        # Decode the edited image
-                        try:
-                            edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
-                            
-                            # Update the photo
-                            photo['current_image'] = edited_image
-                            photo['has_annotations'] = True
-                            
-                            # Reset editor state
-                            st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
-                            
-                            st.success("Photo updated with annotations!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error processing edited image: {str(e)}")
-                    elif editor_result.get('cancelled'):
-                        # User cancelled editing
+            # Handle editor result
+            if editor_result is not None:
+                if editor_result.get('saved') and editor_result.get('pngDataUrl'):
+                    # Decode the edited image
+                    try:
+                        edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
+                        
+                        # Update the photo
+                        photo['current_image'] = edited_image
+                        photo['has_annotations'] = True
+                        
+                        # Reset editor state
                         st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
-                        st.info("Editing cancelled")
+                        
+                        st.success("Photo updated with annotations!")
                         st.rerun()
-            
-            st.divider()
-            
-            # Delete photo
-            if st.button("Delete Photo", key=f"delete_{photo['id']}", type="secondary"):
-                if self.session_store.delete_photo(photo['id'], session_name):
-                    st.success("Photo deleted!")
+                    except Exception as e:
+                        st.error(f"Error processing edited image: {str(e)}")
+                elif editor_result.get('cancelled'):
+                    # User cancelled editing
+                    st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
+                    st.info("Editing cancelled")
+                    st.rerun()
+        
+        st.divider()
+        
+        # Move photo to another session
+        st.markdown("**Move Photo**")
+        other_sessions = [s for s in self.session_store.sessions.keys() if s != session_name]
+        if other_sessions:
+            col_move_to, col_move_btn = st.columns([3, 1])
+            with col_move_to:
+                move_to_session = st.selectbox(
+                    "Move to session:",
+                    options=[""] + other_sessions,
+                    key=f"move_to_{photo['id']}"
+                )
+            with col_move_btn:
+                if move_to_session and st.button("Move", key=f"move_btn_{photo['id']}", use_container_width=True):
+                    if self.session_store.move_photo(photo['id'], session_name, move_to_session):
+                        st.session_state['selected_photo_id'] = None
+                        st.session_state['selected_photo_session'] = None
+                        st.success(f"Moved to {move_to_session}!")
+                        st.rerun()
+        else:
+            st.caption("No other sessions available")
+        
+        st.divider()
+        
+        # Delete photo
+        if st.button("🗑️ Delete Photo", key=f"delete_{photo['id']}", type="secondary"):
+            if self.session_store.delete_photo(photo['id'], session_name):
+                st.session_state['selected_photo_id'] = None
+                st.session_state['selected_photo_session'] = None
+                st.success("Photo deleted!")
+                st.rerun()
                     st.session_state[f'expand_photo_{photo['id']}'] = False
                     st.rerun()
 
