@@ -40,59 +40,60 @@ function onRender(event) {
 }
 
 function showMarkerArea() {
-    if (!imageLoaded) {
-        console.error('Image not loaded yet');
-        return;
-    }
+    try {
+        if (!imageLoaded) return;
 
-    const targetImage = document.getElementById('targetImage');
-    const loadingText = document.getElementById('loadingText');
-    
-    loadingText.classList.add('active');
-    
-    // Create marker.js instance
-    markerArea = new markerjs2.MarkerArea(targetImage);
-    
-    // Configure marker.js
-    markerArea.settings.displayMode = 'popup';
-    markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
-    markerArea.uiStyleSettings.toolbarColor = '#ffffff';
-    
-    // Available tools: FreehandMarker, ArrowMarker, TextMarker, 
-    // EllipseMarker, FrameMarker, LineMarker, etc.
-    markerArea.availableMarkerTypes = [
-        markerjs2.FreehandMarker,
-        markerjs2.ArrowMarker,
-        markerjs2.LineMarker,
-        markerjs2.TextMarker,
-        markerjs2.EllipseMarker,
-        markerjs2.FrameMarker
-    ];
-    
-    // Handle render (save) callback
-    markerArea.addEventListener('render', (event) => {
-        loadingText.classList.remove('active');
-        
-        // Send result back to Python
-        Streamlit.setComponentValue({
-            pngDataUrl: event.dataUrl,
-            saved: true
+        const targetImage = document.getElementById('targetImage');
+        const loadingText = document.getElementById('loadingText');
+        loadingText.classList.add('active');
+
+        const mj = window.markerjs2 || window.markerjs;
+        if (!mj) {
+            loadingText.classList.remove('active');
+            loadingText.textContent = 'Marker.js failed to load.';
+            console.error('Marker.js global not found', window);
+            return;
+        }
+
+        markerArea = new mj.MarkerArea(targetImage);
+        markerArea.settings.displayMode = 'popup';
+        markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
+        markerArea.uiStyleSettings.toolbarColor = '#ffffff';
+
+        markerArea.availableMarkerTypes = [
+            mj.FreehandMarker,
+            mj.ArrowMarker,
+            mj.LineMarker,
+            mj.TextMarker,
+            mj.EllipseMarker,
+            mj.FrameMarker
+        ];
+
+        markerArea.addEventListener('render', (event) => {
+            loadingText.classList.remove('active');
+            Streamlit.setComponentValue({
+                pngDataUrl: event.dataUrl,
+                saved: true
+            });
         });
-    });
-    
-    // Handle close without saving
-    markerArea.addEventListener('close', () => {
-        loadingText.classList.remove('active');
-        Streamlit.setComponentValue({
-            cancelled: true,
-            saved: false,
-            pngDataUrl: null
+
+        markerArea.addEventListener('close', () => {
+            loadingText.classList.remove('active');
+            Streamlit.setComponentValue({
+                cancelled: true,
+                saved: false,
+                pngDataUrl: null
+            });
         });
-    });
-    
-    // Show the marker area
-    markerArea.show();
-    loadingText.classList.remove('active');
+
+        markerArea.show();
+        loadingText.classList.remove('active');
+    } catch (err) {
+        const loadingText = document.getElementById('loadingText');
+        loadingText.classList.remove('active');
+        loadingText.textContent = 'Editor failed to start. Check console.';
+        console.error(err);
+    }
 }
 
 // Register with Streamlit
