@@ -248,17 +248,11 @@ class SessionStore:
         return None
 
 
-class Annotator:
-    """Handles image annotation operations"""
-    pass
-
-
 class BasePage:
     """Base class for all pages"""
     
-    def __init__(self, session_store, annotator):
+    def __init__(self, session_store):
         self.session_store = session_store
-        self.annotator = annotator
     
     def render(self):
         """Render the page - to be implemented by subclasses"""
@@ -641,11 +635,10 @@ class App:
     
     def __init__(self):
         self.session_store = SessionStore()
-        self.annotator = Annotator()
         self.pages = {
-            'Fieldmap': FieldmapPage(self.session_store, self.annotator),
-            'Gallery': GalleryPage(self.session_store, self.annotator),
-            'About': AboutPage(self.session_store, self.annotator)
+            'Fieldmap': FieldmapPage(self.session_store),
+            'Gallery': GalleryPage(self.session_store),
+            'About': AboutPage(self.session_store)
         }
     
     def render_sidebar(self):
