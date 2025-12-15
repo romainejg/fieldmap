@@ -102,6 +102,10 @@ st.markdown("""
         margin-top: 10px;
         margin-bottom: 5px;
     }
+    .logo-fallback {
+        font-size: 2em;
+        text-align: center;
+    }
     .stRadio > div {
         padding-left: 0;
     }
@@ -557,11 +561,14 @@ class GalleryPage(BasePage):
             # Thumbnail with fixed width
             st.image(photo['current_image'], width=180)
             
-            # Minimal metadata
+            # Minimal metadata - extract time from timestamp
+            timestamp_parts = photo['timestamp'].split()
+            time_str = timestamp_parts[1] if len(timestamp_parts) > 1 else timestamp_parts[0]
+            
             st.markdown(f"""
             <div class="photo-card-metadata">
                 <strong>{session_name}</strong><br/>
-                ID: {photo['id']} • {photo['timestamp'].split()[1] if len(photo['timestamp'].split()) > 1 else photo['timestamp']}
+                ID: {photo['id']} • {time_str}
             </div>
             """, unsafe_allow_html=True)
             
@@ -788,9 +795,9 @@ class App:
                     logo_image = Image.open(logo_path)
                     st.image(logo_image, use_container_width=True)
                 else:
-                    st.markdown('<div style="font-size: 2em; text-align: center;">Fieldmap</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
             except Exception as e:
-                st.markdown('<div style="font-size: 2em; text-align: center;">Fieldmap</div>', unsafe_allow_html=True)
+                st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
             # App title and subtitle
