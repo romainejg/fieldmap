@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 # Configure page for mobile optimization
 st.set_page_config(
     page_title="Fieldmap - Lab Photos",
-    page_icon="📸",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -40,11 +39,22 @@ st.markdown("""
         margin-top: 0.5rem;
     }
     .photo-card {
-        border: 2px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 10px;
-        margin: 10px 0;
-        background-color: #f9f9f9;
+        border: 1px solid #e8e8e8;
+        border-radius: 12px;
+        padding: 12px;
+        margin: 8px 0;
+        background-color: #ffffff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        transition: box-shadow 0.2s ease;
+    }
+    .photo-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+    }
+    .photo-card-metadata {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 8px;
+        line-height: 1.4;
     }
     .session-badge {
         background-color: #4CAF50;
@@ -63,17 +73,44 @@ st.markdown("""
     }
     .sidebar-logo {
         text-align: center;
-        padding: 20px 0;
+        padding: 20px 0 15px 0;
+        border-bottom: 1px solid #e0e0e0;
+        margin-bottom: 15px;
     }
     .sidebar-logo img {
-        max-width: 150px;
+        max-width: 240px;
         margin-bottom: 10px;
     }
     .sidebar-title {
-        font-size: 1.5em;
+        font-size: 1.3em;
         font-weight: bold;
         text-align: center;
-        margin-bottom: 20px;
+        margin-bottom: 5px;
+    }
+    .sidebar-subtitle {
+        text-align: center;
+        font-size: 0.85em;
+        color: #666;
+        margin-bottom: 15px;
+    }
+    .sidebar-section-label {
+        font-size: 0.75em;
+        font-weight: 600;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 10px;
+        margin-bottom: 5px;
+    }
+    .logo-fallback {
+        font-size: 2em;
+        text-align: center;
+    }
+    .stRadio > div {
+        padding-left: 0;
+    }
+    .stRadio > div > label > div {
+        text-align: left;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -363,9 +400,9 @@ class FieldmapPage(BasePage):
                 logo_image = Image.open(logo_path)
                 st.image(logo_image, width=100)
             else:
-                st.write("📸")
+                st.markdown("**Fieldmap**")
         except Exception as e:
-            st.write("📸")
+            st.markdown("**Fieldmap**")
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Session management
@@ -383,7 +420,7 @@ class FieldmapPage(BasePage):
             self.session_store.current_session = current_session
         
         with col2:
-            if st.button("➕ New", key="create_session_btn"):
+            if st.button("New", key="create_session_btn"):
                 st.session_state['show_create_session'] = True
         
         if st.session_state.get('show_create_session', False):
@@ -426,7 +463,7 @@ class FieldmapPage(BasePage):
                 st.session_state.last_saved_photo_id = photo_id
                 st.session_state.camera_photo_hash = current_photo_hash
                 st.session_state.camera_key += 1
-                st.success(f"✅ Photo saved! (ID: {photo_id})")
+                st.success(f"Photo saved! (ID: {photo_id})")
                 st.rerun()
         
         # Annotation interface for last saved photo
@@ -455,8 +492,8 @@ class FieldmapPage(BasePage):
                     )
                 
                 # Drawing section with canvas
-                st.markdown("#### 🎨 Draw on Photo")
-                st.info("💡 Draw directly on the photo with freehand or use shapes. Click 'Apply Drawing' to save.")
+                st.markdown("#### Draw on Photo")
+                st.info("Draw directly on the photo with freehand or use shapes. Click 'Apply Drawing' to save.")
                 
                 # Choose drawing mode
                 col1, col2 = st.columns(2)
@@ -465,11 +502,11 @@ class FieldmapPage(BasePage):
                         "Drawing Mode:",
                         options=["freedraw", "line", "rect", "circle", "transform"],
                         format_func=lambda x: {
-                            "freedraw": "✏️ Freehand",
-                            "line": "📏 Line",
-                            "rect": "⬜ Rectangle",
-                            "circle": "⭕ Circle",
-                            "transform": "🔄 Transform"
+                            "freedraw": "Freehand",
+                            "line": "Line",
+                            "rect": "Rectangle",
+                            "circle": "Circle",
+                            "transform": "Transform"
                         }[x],
                         key="last_photo_drawing_mode"
                     )
@@ -501,7 +538,7 @@ class FieldmapPage(BasePage):
                 )
                 
                 # Apply drawing button
-                if st.button("✅ Apply Drawing", key="apply_drawing", type="primary"):
+                if st.button("Apply Drawing", key="apply_drawing", type="primary"):
                     if canvas_result.image_data is not None:
                         merged_image = self.annotator.merge_canvas_with_image(
                             last_photo['current_image'],
@@ -509,12 +546,54 @@ class FieldmapPage(BasePage):
                         )
                         last_photo['current_image'] = merged_image
                         last_photo['has_annotations'] = True
-                        st.success("✅ Drawing applied to photo!")
+                        st.success("Drawing applied to photo!")
                         st.rerun()
 
 
 class GalleryPage(BasePage):
     """Gallery page for viewing and managing photos"""
+    
+    def render_photo_card(self, photo, session_name, cols):
+        """Render a single photo card with clean styling"""
+        with cols:
+            st.markdown('<div class="photo-card">', unsafe_allow_html=True)
+            
+            # Thumbnail with fixed width
+            st.image(photo['current_image'], width=180)
+            
+            # Minimal metadata - extract time from timestamp
+            timestamp_parts = photo['timestamp'].split()
+            time_str = timestamp_parts[1] if len(timestamp_parts) > 1 else timestamp_parts[0]
+            
+            st.markdown(f"""
+            <div class="photo-card-metadata">
+                <strong>{session_name}</strong><br/>
+                ID: {photo['id']} • {time_str}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Move control
+            other_sessions = [s for s in self.session_store.sessions.keys() if s != session_name]
+            if other_sessions:
+                move_to = st.selectbox(
+                    "Move to:",
+                    options=[""] + other_sessions,
+                    key=f"move_select_{photo['id']}",
+                    label_visibility="collapsed"
+                )
+                if move_to:
+                    if self.session_store.move_photo(photo['id'], session_name, move_to):
+                        st.success("Moved!")
+                        st.rerun()
+            
+            if st.button("View/Edit", key=f"view_{photo['id']}", use_container_width=True):
+                st.session_state[f'expand_photo_{photo['id']}'] = True
+                st.rerun()
+            
+            if st.session_state.get(f'expand_photo_{photo['id']}', False):
+                self._render_photo_details(photo, session_name)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
     
     def render(self):
         st.header("Photo Gallery")
@@ -539,49 +618,19 @@ class GalleryPage(BasePage):
         else:
             st.write(f"**{len(photos_to_display)} photo(s) found**")
             
-            # Display photos in grid with smaller thumbnails
+            # Display photos in responsive grid with smaller thumbnails
             cols_per_row = 3
             for i in range(0, len(photos_to_display), cols_per_row):
                 cols = st.columns(cols_per_row)
                 for j in range(cols_per_row):
                     if i + j < len(photos_to_display):
                         session_name, photo = photos_to_display[i + j]
-                        with cols[j]:
-                            # Thumbnail with fixed width
-                            st.image(photo['current_image'], width=120)
-                            
-                            st.markdown(f"""
-                            <div style="font-size: 0.8em; padding: 2px;">
-                                <span style="background-color: #4CAF50; color: white; padding: 2px 6px; border-radius: 8px; font-size: 0.75em;">{session_name}</span>
-                                <br/>ID: {photo['id']} | 🎨: {"✓" if photo['has_annotations'] else "✗"}
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Move to session dropdown
-                            other_sessions = [s for s in self.session_store.sessions.keys() if s != session_name]
-                            if other_sessions:
-                                move_to = st.selectbox(
-                                    "Move to:",
-                                    options=[""] + other_sessions,
-                                    key=f"move_select_{photo['id']}",
-                                    label_visibility="collapsed"
-                                )
-                                if move_to:
-                                    if self.session_store.move_photo(photo['id'], session_name, move_to):
-                                        st.success(f"Moved!")
-                                        st.rerun()
-                            
-                            if st.button("📝 View/Edit", key=f"view_{photo['id']}", use_container_width=True):
-                                st.session_state[f'expand_photo_{photo['id']}'] = True
-                                st.rerun()
-                            
-                            if st.session_state.get(f'expand_photo_{photo['id']}', False):
-                                self._render_photo_details(photo, session_name)
+                        self.render_photo_card(photo, session_name, cols[j])
     
     def _render_photo_details(self, photo, session_name):
         """Render detailed photo view with edit capabilities"""
-        with st.expander(f"✏️ Edit Photo {photo['id']}", expanded=True):
-            if st.button("✖ Close", key=f"close_{photo['id']}"):
+        with st.expander(f"Edit Photo {photo['id']}", expanded=True):
+            if st.button("Close", key=f"close_{photo['id']}"):
                 st.session_state[f'expand_photo_{photo['id']}'] = False
                 st.rerun()
             
@@ -605,7 +654,7 @@ class GalleryPage(BasePage):
             photo['current_image'].save(buf, format='PNG')
             buf.seek(0)
             st.download_button(
-                label="📥 Download Photo" + (" (with annotations)" if photo['has_annotations'] else ""),
+                label="Download Photo" + (" (with annotations)" if photo['has_annotations'] else ""),
                 data=buf,
                 file_name=f"photo_{photo['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                 mime="image/png",
@@ -624,7 +673,7 @@ class GalleryPage(BasePage):
                 key=f"edit_comment_{photo['id']}",
                 placeholder="Add notes or description..."
             )
-            if st.button("💾 Update Comment", key=f"update_{photo['id']}"):
+            if st.button("Update Comment", key=f"update_{photo['id']}"):
                 self.session_store.update_photo_comment(photo['id'], session_name, new_comment)
                 st.success("Comment updated!")
                 st.rerun()
@@ -632,8 +681,8 @@ class GalleryPage(BasePage):
             st.divider()
             
             # Drawing tools with canvas
-            st.markdown("**🎨 Add Annotations**")
-            st.info("💡 Draw directly on the photo. Use 'Reset' to restore original.")
+            st.markdown("**Add Annotations**")
+            st.info("Draw directly on the photo. Use 'Reset' to restore original.")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -641,10 +690,10 @@ class GalleryPage(BasePage):
                     "Drawing Mode:",
                     options=["freedraw", "line", "rect", "circle"],
                     format_func=lambda x: {
-                        "freedraw": "✏️ Freehand",
-                        "line": "📏 Line",
-                        "rect": "⬜ Rectangle",
-                        "circle": "⭕ Circle"
+                        "freedraw": "Freehand",
+                        "line": "Line",
+                        "rect": "Rectangle",
+                        "circle": "Circle"
                     }[x],
                     key=f"drawing_mode_{photo['id']}"
                 )
@@ -677,7 +726,7 @@ class GalleryPage(BasePage):
             
             col_apply, col_reset = st.columns(2)
             with col_apply:
-                if st.button("✅ Apply", key=f"apply_{photo['id']}"):
+                if st.button("Apply", key=f"apply_{photo['id']}"):
                     if canvas_result.image_data is not None:
                         merged_image = self.annotator.merge_canvas_with_image(
                             photo['current_image'],
@@ -685,11 +734,11 @@ class GalleryPage(BasePage):
                         )
                         photo['current_image'] = merged_image
                         photo['has_annotations'] = True
-                        st.success("✅ Drawing applied!")
+                        st.success("Drawing applied!")
                         st.rerun()
             
             with col_reset:
-                if st.button("🔄 Reset", key=f"reset_{photo['id']}"):
+                if st.button("Reset", key=f"reset_{photo['id']}"):
                     photo['current_image'] = photo['original_image'].copy()
                     photo['has_annotations'] = False
                     st.success("Annotations cleared!")
@@ -698,7 +747,7 @@ class GalleryPage(BasePage):
             st.divider()
             
             # Delete photo
-            if st.button("🗑️ Delete Photo", key=f"delete_{photo['id']}", type="secondary"):
+            if st.button("Delete Photo", key=f"delete_{photo['id']}", type="secondary"):
                 if self.session_store.delete_photo(photo['id'], session_name):
                     st.success("Photo deleted!")
                     st.session_state[f'expand_photo_{photo['id']}'] = False
@@ -711,34 +760,15 @@ class AboutPage(BasePage):
     def render(self):
         st.title("About Fieldmap")
         st.markdown("""
-        ## Cadaver Lab Photo Annotation App
+        Fieldmap is a mobile-optimized web app for biomedical engineers working in cadaver labs 
+        to capture, annotate, and organize photos with ease.
         
-        Fieldmap is a mobile-optimized web application designed for biomedical engineers working in cadaver labs. 
-        This app allows users to capture photos, annotate them with freehand drawing or shapes, add comments, 
-        organize them into sessions, and export data.
+        **Key Features:**
+        - Take photos and annotate with freehand drawing
+        - Organize photos into sessions
+        - Export data to Excel
         
-        ### Features
-        
-        - **📸 Photo Capture**: Take photos directly using your mobile device camera
-        - **✏️ Freehand Drawing**: Draw directly on photos with freehand or use shapes (arrows, circles, boxes, text)
-        - **💬 Comments**: Add descriptive notes to each photo
-        - **🗂️ Session Organization**: Organize photos into different sessions
-        - **📊 Export**: Export all data to Excel for analysis
-        - **📱 Mobile Optimized**: Touch-friendly interface designed for mobile use
-        
-        ### How to Use
-        
-        1. **Capture**: Use the Fieldmap page to take photos with your device camera
-        2. **Annotate**: Draw directly on photos using the canvas tool
-        3. **Organize**: Create sessions and move photos between them
-        4. **Review**: View all photos in the Gallery
-        5. **Export**: Download individual photos or export all data to Excel
-        
-        ### Version
-        Fieldmap v2.0 - Biomedical Engineering Lab Documentation System
-        
-        ---
-        *Developed for biomedical engineers and researchers working in cadaver labs and similar settings.*
+        **Version:** Fieldmap v2.0
         """)
 
 
@@ -757,7 +787,7 @@ class App:
     def render_sidebar(self):
         """Render sidebar with logo and navigation"""
         with st.sidebar:
-            # Display logo
+            # Display logo with larger size
             st.markdown('<div class="sidebar-logo">', unsafe_allow_html=True)
             try:
                 logo_path = Path(__file__).parent / "assets" / "logo.png"
@@ -765,21 +795,22 @@ class App:
                     logo_image = Image.open(logo_path)
                     st.image(logo_image, use_container_width=True)
                 else:
-                    st.write("📸")
+                    st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
             except Exception as e:
-                st.write("📸")
+                st.markdown('<div class="logo-fallback">Fieldmap</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # App title
-            st.markdown('<div class="sidebar-title">Cadaver Lab</div>', unsafe_allow_html=True)
+            # App title and subtitle
+            st.markdown('<div class="sidebar-title">Fieldmap</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sidebar-subtitle">Lab Photo Documentation</div>', unsafe_allow_html=True)
             
-            # Navigation with radio buttons (more mobile-friendly)
+            # Navigation section with label
+            st.markdown('<div class="sidebar-section-label">Sections</div>', unsafe_allow_html=True)
             current_index = ['Fieldmap', 'Gallery', 'About'].index(self.session_store.current_page)
             selected_page = st.radio(
                 "Navigation",
                 options=['Fieldmap', 'Gallery', 'About'],
                 index=current_index,
-                format_func=lambda x: f"{'📸' if x == 'Fieldmap' else '🖼️' if x == 'Gallery' else 'ℹ️'} {x}",
                 key="navigation_radio",
                 label_visibility="collapsed"
             )
