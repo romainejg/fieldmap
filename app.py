@@ -491,17 +491,12 @@ class GalleryPage(BasePage):
         """Render draggable view for moving photos between sessions"""
         st.info("📱 Drag photos between sessions to organize them. Changes are saved automatically.")
         
-        # Prepare data for sortables component
-        # Create thumbnail function for display
-        def create_thumbnail_display(photo, session_name):
-            """Create a compact display string for a photo tile"""
-            return f"📷 Photo {photo['id']}"
-        
         # Build the list of containers with items
         sortable_containers = []
         original_structure = {}  # Track original session -> photo mapping
+        session_name_map = {}  # Map container index to session name
         
-        for session_name in sorted(self.session_store.sessions.keys()):
+        for idx, session_name in enumerate(sorted(self.session_store.sessions.keys())):
             photos = self.session_store.sessions[session_name]
             items = []
             for photo in photos:
@@ -513,6 +508,7 @@ class GalleryPage(BasePage):
                     'photo': photo
                 }
             
+            session_name_map[idx] = session_name
             sortable_containers.append({
                 "header": f"📁 {session_name} ({len(photos)} photo{'s' if len(photos) != 1 else ''})",
                 "items": items
@@ -560,21 +556,39 @@ class GalleryPage(BasePage):
         if sorted_containers != sortable_containers:
             # Build new structure from sorted containers
             new_structure = {}
-            for container in sorted_containers:
-                session_name = container["header"].split(" (")[0].replace("📁 ", "")
-                new_structure[session_name] = []
+            changes_made = False
+            
+            for idx, container in enumerate(sorted_containers):
+                # Use the session name map for robust session name retrieval
+                if idx < len(session_name_map):
+                    session_name = session_name_map[idx]
+                else:
+                    # Fallback: extract from header
+                    session_name = container["header"].split(" (")[0].replace("📁 ", "").strip()
+                
+                new_photos = []
                 for item_id in container["items"]:
                     if item_id in original_structure:
                         photo_info = original_structure[item_id]
-                        new_structure[session_name].append(photo_info['photo'])
+                        new_photos.append(photo_info['photo'])
+                
+                new_structure[session_name] = new_photos
             
-            # Update session state with new structure
+            # Update session state with new structure, ensuring all sessions exist
             for session_name, photos in new_structure.items():
-                if session_name in st.session_state.sessions:
+                # Ensure session exists in session state
+                if session_name not in st.session_state.sessions:
+                    st.session_state.sessions[session_name] = []
+                
+                # Only update if there's an actual change
+                if st.session_state.sessions[session_name] != photos:
                     st.session_state.sessions[session_name] = photos
+                    changes_made = True
             
-            st.success("✓ Photos reorganized!")
-            st.rerun()
+            # Only show success and rerun if actual changes were made
+            if changes_made:
+                st.success("✓ Photos reorganized!")
+                st.rerun()
         
         # Show thumbnails below for reference
         st.divider()
