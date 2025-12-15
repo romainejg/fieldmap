@@ -1155,23 +1155,37 @@ class AboutPage(BasePage):
             # Check if we're handling OAuth callback
             query_params = st.query_params
             if 'code' in query_params and 'state' in query_params:
-                # Handle OAuth callback
-                redirect_uri = self.google_auth._get_redirect_uri()
+                # Handle OAuth callback with state validation for CSRF protection
+                expected_state = st.session_state.get('oauth_state')
+                received_state = query_params['state']
                 
-                # Build authorization response URL
-                params = {'code': query_params['code'], 'state': query_params['state']}
-                auth_response_url = f"{redirect_uri}?{urlencode(params)}"
-                
-                with st.spinner("Completing sign-in..."):
-                    if self.google_auth.handle_oauth_callback(auth_response_url):
-                        st.session_state.google_authed = True
-                        st.session_state.google_user_email = self.google_auth.get_user_email()
-                        # Clear query params
-                        st.query_params.clear()
-                        st.rerun()
-                    else:
-                        st.error("Authentication failed. Please try again.")
-                        st.query_params.clear()
+                if not expected_state or expected_state != received_state:
+                    st.error("Invalid OAuth state. Possible CSRF attack detected. Please try again.")
+                    st.query_params.clear()
+                    if 'oauth_state' in st.session_state:
+                        del st.session_state.oauth_state
+                else:
+                    # State is valid, proceed with token exchange
+                    redirect_uri = self.google_auth._get_redirect_uri()
+                    
+                    # Build authorization response URL
+                    params = {'code': query_params['code'], 'state': query_params['state']}
+                    auth_response_url = f"{redirect_uri}?{urlencode(params)}"
+                    
+                    with st.spinner("Completing sign-in..."):
+                        if self.google_auth.handle_oauth_callback(auth_response_url):
+                            st.session_state.google_authed = True
+                            st.session_state.google_user_email = self.google_auth.get_user_email()
+                            # Clear query params and state
+                            st.query_params.clear()
+                            if 'oauth_state' in st.session_state:
+                                del st.session_state.oauth_state
+                            st.rerun()
+                        else:
+                            st.error("Authentication failed. Please try again.")
+                            st.query_params.clear()
+                            if 'oauth_state' in st.session_state:
+                                del st.session_state.oauth_state
             
             # Check if credentials are configured
             client_config = self.google_auth._get_credentials_config()
@@ -1212,11 +1226,12 @@ class AboutPage(BasePage):
                     if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
                         # Use json.dumps to safely escape the URL for JavaScript context
+                        # Use window.top to prevent clickjacking attacks
                         safe_url = json.dumps(auth_url)
                         components.html(
                             f"""
                             <script>
-                                window.parent.location.href = {safe_url};
+                                window.top.location.href = {safe_url};
                             </script>
                             """,
                             height=0
