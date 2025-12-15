@@ -1,0 +1,99 @@
+# GitHub Actions Workflow for Fieldmap
+# 
+# This workflow documents the required secrets for deployment.
+# Note: GitHub Secrets cannot automatically sync to Streamlit Cloud.
+# You must manually add secrets to Streamlit Cloud's Secrets management UI.
+#
+# Required GitHub Repository Secrets:
+# - GOOGLE_OAUTH_CLIENT_JSON: Full OAuth client JSON from Google Cloud Console
+# - GOOGLE_REDIRECT_URI: OAuth redirect URI (e.g., https://fieldmap.streamlit.app)
+#
+# To add secrets:
+# 1. Go to repository Settings → Secrets and variables → Actions
+# 2. Click "New repository secret"
+# 3. Add each secret with the exact name above
+
+name: CI
+
+on:
+  push:
+    branches: [ main, copilot/** ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run tests
+      run: |
+        python test_derived_photos.py
+        python test_integration.py
+    
+    - name: Check Python syntax
+      run: |
+        python -m py_compile app.py
+        python -m py_compile google_auth.py
+        python -m py_compile storage.py
+    
+    # Note: Actual deployment to Streamlit Cloud is done through Streamlit's platform
+    # This workflow only validates the code
+    
+  validate-secrets-documentation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Validate secrets template exists
+      run: |
+        if [ ! -f ".streamlit/secrets.toml.template" ]; then
+          echo "Error: .streamlit/secrets.toml.template not found"
+          exit 1
+        fi
+        echo "✓ Secrets template found"
+    
+    - name: Validate setup guide exists
+      run: |
+        if [ ! -f "SETUP_GUIDE.md" ]; then
+          echo "Error: SETUP_GUIDE.md not found"
+          exit 1
+        fi
+        echo "✓ Setup guide found"
+    
+    - name: Check that credentials.json is not committed
+      run: |
+        if [ -f "credentials.json" ]; then
+          echo "Error: credentials.json should not be committed!"
+          exit 1
+        fi
+        echo "✓ No credentials.json in repository"
+    
+    - name: Check that token.pickle is not committed
+      run: |
+        if [ -f "token.pickle" ]; then
+          echo "Error: token.pickle should not be committed!"
+          exit 1
+        fi
+        echo "✓ No token.pickle in repository"
+    
+    - name: Check that secrets.toml is not committed
+      run: |
+        if [ -f ".streamlit/secrets.toml" ]; then
+          echo "Error: .streamlit/secrets.toml should not be committed!"
+          exit 1
+        fi
+        echo "✓ No secrets.toml in repository"
