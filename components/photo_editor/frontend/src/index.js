@@ -64,10 +64,11 @@ function onRender(event) {
         Streamlit.setFrameHeight(h);
         
         // Use requestAnimationFrame + setTimeout for proper timing
+        // Ensures layout is calculated and DOM is ready before showing editor
         requestAnimationFrame(() => {
             setTimeout(() => {
                 showMarkerArea();
-            }, 50);
+            }, 50); // Small delay allows Streamlit iframe to stabilize
         });
     };
     
