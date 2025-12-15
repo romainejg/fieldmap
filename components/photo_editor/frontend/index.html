@@ -46,6 +46,7 @@
         const Streamlit = window.Streamlit;
         let markerArea = null;
         let imageLoaded = false;
+        let lastImageData = null;
 
         function onRender(event) {
             const data = event.detail;
@@ -56,6 +57,25 @@
             }
 
             const imageData = data.args.image_data;
+            
+            // If image hasn't changed, just set frame height and return
+            if (imageData === lastImageData) {
+                Streamlit.setFrameHeight();
+                return;
+            }
+            
+            // Image has changed - close existing editor and prepare for new one
+            lastImageData = imageData;
+            
+            if (markerArea) {
+                try {
+                    markerArea.close();
+                } catch (e) {
+                    console.log('Error closing existing marker area:', e);
+                }
+                markerArea = null;
+            }
+            
             const targetImage = document.getElementById('targetImage');
             
             // Wait for image to load before auto-opening editor
@@ -63,14 +83,14 @@
                 imageLoaded = true;
                 console.log('Image loaded successfully');
                 
-                const h = Math.max(600, targetImage.getBoundingClientRect().height + 80);
+                const h = Math.max(700, targetImage.getBoundingClientRect().height + 200);
                 Streamlit.setFrameHeight(h);
                 
                 // Automatically open the marker.js editor after a brief delay
                 // to ensure all resources are ready
                 setTimeout(() => {
                     showMarkerArea();
-                }, 300);
+                }, 150);
             };
             
             targetImage.onerror = function() {
@@ -80,13 +100,13 @@
             
             // Set image source (should be base64 data URL)
             targetImage.src = imageData;
-            
-            Streamlit.setFrameHeight();
         }
 
         function showMarkerArea() {
             try {
-                if (!imageLoaded) return;
+                if (!imageLoaded) {
+                    return;
+                }
 
                 const targetImage = document.getElementById('targetImage');
                 const loadingText = document.getElementById('loadingText');
@@ -105,30 +125,48 @@
                 markerArea.uiStyleSettings.toolbarBackgroundColor = '#4CAF50';
                 markerArea.uiStyleSettings.toolbarColor = '#ffffff';
 
+                // Restrict to only outline/unfilled marker types
                 markerArea.availableMarkerTypes = [
                     mj.FreehandMarker,
                     mj.ArrowMarker,
                     mj.LineMarker,
                     mj.TextMarker,
-                    mj.EllipseMarker,
-                    mj.FrameMarker
+                    mj.EllipseMarker,  // Unfilled circle/ellipse
+                    mj.FrameMarker      // Unfilled square/rectangle
                 ];
 
+                // Track whether save has occurred to prevent double cancel
+                let didSave = false;
+
+                // Helper function to send saved image back to Streamlit
+                function sendSaved(dataUrl) {
+                    didSave = true;
+                    Streamlit.setComponentValue({ saved: true, pngDataUrl: dataUrl });
+                    Streamlit.setFrameHeight();
+                }
+
+                // Listen for both render and rendered events (markerjs2 may fire either)
                 markerArea.addEventListener('render', (event) => {
                     loadingText.classList.remove('active');
-                    Streamlit.setComponentValue({
-                        pngDataUrl: event.dataUrl,
-                        saved: true
-                    });
+                    sendSaved(event.dataUrl);
+                });
+
+                markerArea.addEventListener('rendered', (event) => {
+                    loadingText.classList.remove('active');
+                    sendSaved(event.dataUrl);
                 });
 
                 markerArea.addEventListener('close', () => {
                     loadingText.classList.remove('active');
-                    Streamlit.setComponentValue({
-                        cancelled: true,
-                        saved: false,
-                        pngDataUrl: null
-                    });
+                    // Only send cancelled if save didn't happen
+                    if (!didSave) {
+                        Streamlit.setComponentValue({
+                            cancelled: true,
+                            saved: false,
+                            pngDataUrl: null
+                        });
+                    }
+                    Streamlit.setFrameHeight();
                 });
 
                 markerArea.show();
