@@ -10,11 +10,12 @@ import pandas as pd
 from PIL import Image
 import io
 import base64
+import json
 from datetime import datetime
 from pathlib import Path
 import numpy as np
 import logging
-import html
+from urllib.parse import urlencode
 from components.photo_editor import photo_editor, decode_image_from_dataurl
 from streamlit_sortables import sort_items
 from google_auth import GoogleAuthHelper
@@ -1155,7 +1156,6 @@ class AboutPage(BasePage):
             query_params = st.query_params
             if 'code' in query_params and 'state' in query_params:
                 # Handle OAuth callback
-                from urllib.parse import urlencode
                 redirect_uri = self.google_auth._get_redirect_uri()
                 
                 # Build authorization response URL
@@ -1211,12 +1211,12 @@ class AboutPage(BasePage):
                     auth_url = self.google_auth.get_auth_url()
                     if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
-                        # Escape the URL to prevent XSS attacks
-                        escaped_url = html.escape(auth_url, quote=True)
+                        # Use json.dumps to safely escape the URL for JavaScript context
+                        safe_url = json.dumps(auth_url)
                         components.html(
                             f"""
                             <script>
-                                window.parent.location.href = "{escaped_url}";
+                                window.parent.location.href = {safe_url};
                             </script>
                             """,
                             height=0
