@@ -215,6 +215,7 @@ __marimo__/
 sessions/
 uploads/
 exports/
+data/
 *.xlsx
 *.xls
 test_app.py
