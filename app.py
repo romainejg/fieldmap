@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import logging
 from components.photo_editor import photo_editor, decode_image_from_dataurl
+from streamlit_sortables import sort_items
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -444,11 +445,21 @@ class GalleryPage(BasePage):
     def render(self):
         st.header("Photo Gallery")
         
-        view_session = st.selectbox(
-            "View Session:",
-            options=["All Sessions"] + list(self.session_store.sessions.keys()),
-            key="gallery_session_filter"
-        )
+        # View mode selector
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            view_session = st.selectbox(
+                "View Session:",
+                options=["All Sessions"] + list(self.session_store.sessions.keys()),
+                key="gallery_session_filter"
+            )
+        with col2:
+            view_mode = st.radio(
+                "View Mode:",
+                options=["Grid", "Draggable"],
+                key="gallery_view_mode",
+                horizontal=True
+            )
         
         photos_to_display = []
         if view_session == "All Sessions":
@@ -464,14 +475,120 @@ class GalleryPage(BasePage):
         else:
             st.write(f"**{len(photos_to_display)} photo(s) found**")
             
-            # Display photos in responsive grid - 4 columns desktop, 2 mobile handled by Streamlit
-            cols_per_row = 4
-            for i in range(0, len(photos_to_display), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j in range(cols_per_row):
-                    if i + j < len(photos_to_display):
-                        session_name, photo = photos_to_display[i + j]
-                        self.render_photo_card(photo, session_name, cols[j])
+            if view_mode == "Draggable":
+                self._render_draggable_view()
+            else:
+                # Display photos in responsive grid - 4 columns desktop, 2 mobile handled by Streamlit
+                cols_per_row = 4
+                for i in range(0, len(photos_to_display), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j in range(cols_per_row):
+                        if i + j < len(photos_to_display):
+                            session_name, photo = photos_to_display[i + j]
+                            self.render_photo_card(photo, session_name, cols[j])
+    
+    def _render_draggable_view(self):
+        """Render draggable view for moving photos between sessions"""
+        st.info("📱 Drag photos between sessions to organize them. Changes are saved automatically.")
+        
+        # Prepare data for sortables component
+        # Create thumbnail function for display
+        def create_thumbnail_display(photo, session_name):
+            """Create a compact display string for a photo tile"""
+            return f"📷 Photo {photo['id']}"
+        
+        # Build the list of containers with items
+        sortable_containers = []
+        original_structure = {}  # Track original session -> photo mapping
+        
+        for session_name in sorted(self.session_store.sessions.keys()):
+            photos = self.session_store.sessions[session_name]
+            items = []
+            for photo in photos:
+                item_id = f"photo_{photo['id']}"
+                items.append(item_id)
+                original_structure[item_id] = {
+                    'photo_id': photo['id'],
+                    'session': session_name,
+                    'photo': photo
+                }
+            
+            sortable_containers.append({
+                "header": f"📁 {session_name} ({len(photos)} photo{'s' if len(photos) != 1 else ''})",
+                "items": items
+            })
+        
+        # Custom CSS for better appearance
+        custom_style = """
+        .sortable-item {
+            background-color: #ffffff;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+            cursor: move;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: box-shadow 0.2s ease;
+        }
+        .sortable-item:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        .sortable-container {
+            background-color: #f5f5f5;
+            border-radius: 8px;
+            padding: 12px;
+            min-height: 100px;
+            margin: 8px 0;
+        }
+        .sortable-container-header {
+            font-weight: bold;
+            color: #4CAF50;
+            margin-bottom: 8px;
+        }
+        """
+        
+        # Render sortables
+        sorted_containers = sort_items(
+            sortable_containers,
+            multi_containers=True,
+            direction="vertical",
+            custom_style=custom_style,
+            key="gallery_sortable"
+        )
+        
+        # Detect changes and update session store
+        if sorted_containers != sortable_containers:
+            # Build new structure from sorted containers
+            new_structure = {}
+            for container in sorted_containers:
+                session_name = container["header"].split(" (")[0].replace("📁 ", "")
+                new_structure[session_name] = []
+                for item_id in container["items"]:
+                    if item_id in original_structure:
+                        photo_info = original_structure[item_id]
+                        new_structure[session_name].append(photo_info['photo'])
+            
+            # Update session state with new structure
+            for session_name, photos in new_structure.items():
+                if session_name in st.session_state.sessions:
+                    st.session_state.sessions[session_name] = photos
+            
+            st.success("✓ Photos reorganized!")
+            st.rerun()
+        
+        # Show thumbnails below for reference
+        st.divider()
+        st.markdown("### Photo Previews")
+        for session_name in sorted(self.session_store.sessions.keys()):
+            photos = self.session_store.sessions[session_name]
+            if photos:
+                st.markdown(f"**{session_name}**")
+                cols = st.columns(min(4, len(photos)))
+                for idx, photo in enumerate(photos[:4]):  # Show max 4 thumbnails
+                    with cols[idx]:
+                        st.image(photo['current_image'], caption=f"Photo {photo['id']}", use_column_width=True)
+                if len(photos) > 4:
+                    st.caption(f"... and {len(photos) - 4} more")
     
     def _render_photo_details(self, photo, session_name):
         """Render detailed photo view with edit capabilities"""
