@@ -81,7 +81,7 @@ st.markdown("""
         margin-bottom: 15px;
     }
     .sidebar-logo img {
-        max-width: 300px;
+        max-width: 240px;
         width: 100%;
         margin-bottom: 0px;
     }
