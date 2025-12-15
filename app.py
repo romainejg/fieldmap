@@ -10,7 +10,6 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 from datetime import datetime
 from pathlib import Path
-from streamlit_drawable_canvas import st_canvas
 import numpy as np
 import logging
 from components.photo_editor import photo_editor, decode_image_from_dataurl
@@ -682,96 +681,63 @@ class GalleryPage(BasePage):
             
             st.divider()
             
-            # Drawing tools with canvas
+            # Drawing tools with marker.js
             st.markdown("**Add Annotations**")
-            st.info("Draw directly on the photo. Use 'Reset' to restore original.")
             
-            # Initialize draw_version if not present (for backward compatibility)
-            if 'draw_version' not in photo:
-                photo['draw_version'] = 0
+            # Initialize show_gallery_editor state if not present
+            if f'show_gallery_editor_{photo["id"]}' not in st.session_state:
+                st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
             
-            col1, col2 = st.columns(2)
-            with col1:
-                drawing_mode = st.selectbox(
-                    "Drawing Mode:",
-                    options=["freedraw", "line", "rect", "circle"],
-                    format_func=lambda x: {
-                        "freedraw": "Freehand",
-                        "line": "Line",
-                        "rect": "Rectangle",
-                        "circle": "Circle"
-                    }[x],
-                    key=f"drawing_mode_{photo['id']}"
-                )
-            with col2:
-                stroke_color = st.color_picker(
-                    "Color:",
-                    value="#FF0000",
-                    key=f"stroke_color_{photo['id']}"
-                )
+            # Show current photo preview
+            st.image(photo['current_image'], caption="Current Photo", use_column_width=True)
             
-            stroke_width = st.slider(
-                "Stroke Width:",
-                min_value=1,
-                max_value=20,
-                value=3,
-                key=f"stroke_width_{photo['id']}"
-            )
-            
-            # Create a resized copy for display (fixed width 700px, preserve aspect ratio)
-            display_image = photo['current_image'].copy()
-            original_width, original_height = display_image.size
-            display_width = min(700, original_width)
-            aspect_ratio = original_height / original_width
-            display_height = int(display_width * aspect_ratio)
-            display_image = display_image.resize((display_width, display_height), Image.Resampling.LANCZOS)
-            
-            # Ensure display image is RGB
-            if display_image.mode != 'RGB':
-                display_image = display_image.convert('RGB')
-            
-            # Canvas for drawing
-            canvas_result = st_canvas(
-                fill_color="rgba(0, 0, 0, 0)",
-                stroke_width=stroke_width,
-                stroke_color=stroke_color,
-                background_image=display_image,
-                update_streamlit=True,
-                drawing_mode=drawing_mode,
-                key=f"gallery_canvas_{photo['id']}_{photo['draw_version']}",
-                height=display_height,
-                width=display_width,
-            )
-            
-            col_apply, col_reset = st.columns(2)
-            with col_apply:
-                if st.button("Apply", key=f"apply_{photo['id']}"):
-                    if canvas_result.image_data is not None:
-                        # Merge canvas with display image
-                        merged_display = self.annotator.merge_canvas_with_image(
-                            display_image,
-                            canvas_result
-                        )
-                        
-                        # Scale back to original size if needed
-                        if (display_width, display_height) != (original_width, original_height):
-                            merged_image = merged_display.resize((original_width, original_height), Image.Resampling.LANCZOS)
-                        else:
-                            merged_image = merged_display
-                        
-                        photo['current_image'] = merged_image
-                        photo['has_annotations'] = True
-                        photo['draw_version'] += 1
-                        st.success("Drawing applied!")
-                        st.rerun()
+            col_edit, col_reset = st.columns(2)
+            with col_edit:
+                # Edit photo button
+                if st.button("Edit Photo", key=f"edit_photo_gallery_{photo['id']}", type="primary"):
+                    st.session_state[f'show_gallery_editor_{photo["id"]}'] = True
+                    st.rerun()
             
             with col_reset:
-                if st.button("Reset", key=f"reset_{photo['id']}"):
+                if st.button("Reset", key=f"reset_{photo['id']}", type="secondary"):
                     photo['current_image'] = photo['original_image'].copy()
                     photo['has_annotations'] = False
-                    photo['draw_version'] += 1
                     st.success("Annotations cleared!")
                     st.rerun()
+            
+            # Display photo editor component when requested
+            if st.session_state[f'show_gallery_editor_{photo["id"]}']:
+                st.info("Use the annotation tools below. Click Save to apply changes or Cancel to discard.")
+                
+                # Call the photo editor component
+                editor_result = photo_editor(
+                    image=photo['current_image'],
+                    key=f"photo_editor_gallery_{photo['id']}"
+                )
+                
+                # Handle editor result
+                if editor_result is not None:
+                    if editor_result.get('saved') and editor_result.get('pngDataUrl'):
+                        # Decode the edited image
+                        try:
+                            edited_image = decode_image_from_dataurl(editor_result['pngDataUrl'])
+                            
+                            # Update the photo
+                            photo['current_image'] = edited_image
+                            photo['has_annotations'] = True
+                            
+                            # Reset editor state
+                            st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
+                            
+                            st.success("Photo updated with annotations!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error processing edited image: {str(e)}")
+                    elif editor_result.get('cancelled'):
+                        # User cancelled editing
+                        st.session_state[f'show_gallery_editor_{photo["id"]}'] = False
+                        st.info("Editing cancelled")
+                        st.rerun()
             
             st.divider()
             
