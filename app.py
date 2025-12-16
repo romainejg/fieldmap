@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 # Session state keys for OAuth flow
 PENDING_AUTH_URL_KEY = "pending_auth_url"
-REDIRECT_INITIATED_KEY = "redirect_initiated"
 
 # Constants
 MAX_URL_DISPLAY_LENGTH = 80
@@ -1067,17 +1066,6 @@ class AboutPage(BasePage):
         super().__init__(session_store)
         self.google_auth = google_auth_helper
     
-    def _clear_oauth_state(self):
-        """Clear all OAuth-related session state keys."""
-        keys_to_clear = [
-            'oauth_state',
-            PENDING_AUTH_URL_KEY,
-            REDIRECT_INITIATED_KEY
-        ]
-        for key in keys_to_clear:
-            if key in st.session_state:
-                del st.session_state[key]
-    
     def render(self):
         # Custom CSS for hero split layout
         st.markdown("""
@@ -1447,8 +1435,6 @@ class App:
                                 del st.session_state['oauth_state']
                             if PENDING_AUTH_URL_KEY in st.session_state:
                                 del st.session_state[PENDING_AUTH_URL_KEY]
-                            if REDIRECT_INITIATED_KEY in st.session_state:
-                                del st.session_state[REDIRECT_INITIATED_KEY]
                             st.success("✅ Successfully signed in!")
                             st.rerun()
                         else:
