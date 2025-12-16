@@ -55,6 +55,9 @@ class GoogleAuthHelper:
         
         # Ensure cookies are ready
         if not st.session_state.cookie_manager.ready():
+            # Cookie manager needs time to initialize
+            # This is normal on first load and doesn't indicate an error
+            st.info("🔄 Initializing secure session... Please wait.")
             st.stop()
         
         return st.session_state.cookie_manager
@@ -305,13 +308,16 @@ class GoogleAuthHelper:
             
             # Build auth URL with the state
             # The state parameter is passed to authorization_url() and will be used
-            # in the returned URL. The second return value would be the same state.
-            auth_url, _ = flow.authorization_url(
+            # in the returned URL. The second return value would be the same state,
+            # so we capture it but don't use it (we already have the state we generated).
+            auth_url, returned_state = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
                 prompt='consent',
                 state=state
             )
+            # Verify the library returned our state (sanity check)
+            assert returned_state == state, "OAuth library should return our provided state"
             
             # Store state in BOTH cookie and session_state for redundancy
             try:

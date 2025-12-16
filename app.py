@@ -1453,10 +1453,14 @@ class App:
                 
                 st.text(f"State source: {state_source}")
                 try:
-                    cookie_present = 'oauth_state' in self.google_auth.cookies
-                    st.text(f"Cookie present: {cookie_present}")
-                except AttributeError:
-                    st.text("Cookie present: N/A (cookie manager not initialized)")
+                    # Check if cookie manager exists and is accessible
+                    if not hasattr(self.google_auth, 'cookies'):
+                        st.text("Cookie present: N/A (cookie manager not initialized)")
+                    else:
+                        cookie_present = 'oauth_state' in self.google_auth.cookies
+                        st.text(f"Cookie present: {cookie_present}")
+                except RuntimeError as e:
+                    st.text(f"Cookie present: N/A (runtime error: {str(e)})")
                 except Exception as e:
                     st.text(f"Cookie present: N/A (error: {type(e).__name__})")
                 
