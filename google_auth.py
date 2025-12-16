@@ -56,6 +56,10 @@ class GoogleAuthHelper:
                     st.warning("⚠️ **Configuration Warning**: OAuth client configuration doesn't have expected 'web' key. OAuth may not work correctly.")
                 return None
             
+            # Warn if both web and installed are present (unusual but possible)
+            if "installed" in config:
+                st.warning("⚠️ **Configuration Warning**: OAuth client has both 'web' and 'installed' keys. Using 'web' configuration.")
+            
             return config
         except json.JSONDecodeError:
             return None

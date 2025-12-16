@@ -1288,8 +1288,8 @@ class AboutPage(BasePage):
                 
                 # If redirect was just initiated, show the JavaScript redirect and clear flag
                 if st.session_state.get(REDIRECT_INITIATED_KEY, False):
-                    # Clear the flag immediately so we don't keep showing the redirect
-                    st.session_state[REDIRECT_INITIATED_KEY] = False
+                    # Clear the flag by deleting the key to be explicit about intent
+                    del st.session_state[REDIRECT_INITIATED_KEY]
                     
                     auth_url = st.session_state.get(PENDING_AUTH_URL_KEY)
                     if auth_url:
@@ -1318,10 +1318,9 @@ class AboutPage(BasePage):
                         use_container_width=True
                     )
                     st.caption("⬆️ Click above if you weren't automatically redirected")
-                    # Provide a way to clear and try again
+                    # Provide a way to clear all OAuth state and try again
                     if st.button("Try Again", key="clear_pending_auth"):
-                        if PENDING_AUTH_URL_KEY in st.session_state:
-                            del st.session_state[PENDING_AUTH_URL_KEY]
+                        self._clear_oauth_state()
                         st.rerun()
                 
                 # Add guidance about test users
