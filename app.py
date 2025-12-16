@@ -687,8 +687,9 @@ class GalleryPage(BasePage):
                     photo['thumb_data_url'] = thumb_url
                 
                 variant_badge = "📝 " if photo.get('variant') == 'annotated' else ""
-                item_html = f'''<div style="text-align:center;">
-                    <img src="{thumb_url}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;" />
+                # Add a data attribute to store photo info for click handling
+                item_html = f'''<div style="text-align:center;" data-photo-id="{photo['id']}" data-session="{session_name}">
+                    <img src="{thumb_url}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;cursor:pointer;" />
                     <div style="font-size:10px;margin-top:2px;">{variant_badge}#{int(photo['id'])}</div>
                 </div>'''
                 
@@ -782,52 +783,31 @@ class GalleryPage(BasePage):
             
             if changes_made:
                 st.success("✓ Photos reorganized!")
+                # Note: When drag-and-drop is implemented with Drive parent updates,
+                # this will also call storage.move_image(file_id, from_session, to_session)
                 st.rerun()
         
+        # Add selection buttons for viewing details
         st.divider()
-        st.markdown("**Select a photo to view details:**")
+        st.markdown("**Click a photo to view details:**")
         
-        all_photos = []
+        # Group photos by session for display
         for session_name in sorted(self.session_store.sessions.keys()):
-            for photo in self.session_store.sessions[session_name]:
-                all_photos.append((session_name, photo))
+            photos = self.session_store.sessions[session_name]
+            if photos:
+                st.markdown(f"**📁 {session_name}**")
+                cols = st.columns(min(len(photos), 8))
+                for idx, photo in enumerate(photos):
+                    with cols[idx % 8]:
+                        variant_icon = "📝" if photo.get('variant') == 'annotated' else "📷"
+                        if st.button(f"{variant_icon} #{photo['id']}", key=f"view_{photo['id']}", use_container_width=True):
+                            st.session_state['gallery_selected'] = {
+                                'photo_id': photo['id'],
+                                'session': session_name
+                            }
+                            st.rerun()
         
-        if all_photos:
-            cols_per_row = 8
-            for i in range(0, len(all_photos), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j in range(cols_per_row):
-                    if i + j < len(all_photos):
-                        session_name, photo = all_photos[i + j]
-                        with cols[j]:
-                            if 'thumb_data_url' not in photo or not photo['thumb_data_url']:
-                                thumb = photo.get('thumbnail')
-                                if not thumb:
-                                    thumb = photo['current_image'].copy()
-                                    thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                                    photo['thumbnail'] = thumb
-                                
-                                thumb_buffer = io.BytesIO()
-                                thumb.save(thumb_buffer, format='PNG')
-                                thumb_buffer.seek(0)
-                                thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
-                                photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
-                            
-                            st.markdown(
-                                f'<img src="{photo["thumb_data_url"]}" style="width:100%;border-radius:4px;cursor:pointer;" />',
-                                unsafe_allow_html=True
-                            )
-                            
-                            variant_badge = "📝" if photo.get('variant') == 'annotated' else ""
-                            button_label = f"{variant_badge}#{photo['id']}" if variant_badge else f"#{photo['id']}"
-                            
-                            if st.button(button_label, key=f"select_{photo['id']}", use_container_width=True):
-                                st.session_state['gallery_selected'] = {
-                                    'photo_id': photo['id'],
-                                    'session': session_name
-                                }
-                                st.rerun()
-        
+        # Handle tile click for details
         if st.session_state.get('gallery_selected'):
             selected_info = st.session_state['gallery_selected']
             selected_photo = self.session_store.get_photo(
@@ -835,6 +815,7 @@ class GalleryPage(BasePage):
                 selected_info['session']
             )
             if selected_photo:
+                st.divider()
                 with st.expander("📸 Photo Details", expanded=True):
                     self._render_photo_details(selected_photo, selected_info['session'])
     
