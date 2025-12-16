@@ -1154,19 +1154,16 @@ class AboutPage(BasePage):
         
         with col_left:
             # Greeting headline
-            st.markdown('<div style="font-size: 1.5rem; color: #666; margin-bottom: 0.5rem;">Hello.</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size: 3rem; color: #666; margin-bottom: 0.5rem;">Hello!</div>', unsafe_allow_html=True)
             
             # Main headline
-            st.markdown('<div class="hero-title">Welcome to Fieldmap</div>', unsafe_allow_html=True)
+            st.markdown('<div class="hero-title">Welcome to Fieldmap.</div>', unsafe_allow_html=True)
             
             # Concise feature list (3-5 bullets)
             st.markdown("""
             <div class="feature-list">
             <ul style="list-style-type: none; padding-left: 0;">
-                <li>📸 Capture and organize cadaver lab photos</li>
-                <li>✏️ Annotate with drawings, arrows, and shapes</li>
-                <li>📁 Organize in sessions (albums)</li>
-                <li>☁️ Auto-sync to Google Drive</li>
+            <li> A non-profit app to assist biomedical engineers with lab efficiency and documentation. Capture and organize photos, annotate images, and sync automatically to Google Drive.</li>
             </ul>
             </div>
             """, unsafe_allow_html=True)
