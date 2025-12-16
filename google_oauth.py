@@ -93,9 +93,6 @@ def clear_auth_state():
     """
     Clear all OAuth-related state from session_state.
     Helper function to eliminate duplication.
-    
-    Note: This only clears session_state. Query params (including oauth_state)
-    must be cleared separately by the caller using st.query_params.clear()
     """
     keys_to_clear = ["oauth_state", "auth_in_progress", "pending_auth_url"]
     for key in keys_to_clear:
@@ -108,7 +105,7 @@ def build_auth_url() -> Optional[str]:
     """
     Generate OAuth authorization URL with state and nonce.
     Uses Authlib OAuth2Session.
-    Persists oauth_state in both session_state AND query params for reliability.
+    Persists oauth_state in session_state which survives redirects.
     
     Returns:
         Authorization URL or None if config not available
@@ -147,11 +144,8 @@ def build_auth_url() -> Optional[str]:
         )
         
         # Store state in session_state for verification
+        # Session state persists across redirects within the same browser session
         st.session_state["oauth_state"] = state
-        
-        # ALSO persist oauth_state in query params before redirect
-        # This ensures state survives the redirect roundtrip
-        st.query_params["oauth_state"] = state
         
         # Set auth_in_progress flag to prevent state overwrite on reruns
         st.session_state["auth_in_progress"] = True
@@ -170,7 +164,7 @@ def handle_callback() -> bool:
     """
     Handle OAuth callback when user returns from Google.
     Verifies state, exchanges code for token, and stores in session_state.
-    Retrieves expected_state from query params OR session_state for reliability.
+    Retrieves expected_state from session_state (persists across redirects).
     
     Returns:
         True if authentication successful, False otherwise
@@ -185,19 +179,15 @@ def handle_callback() -> bool:
     code = query_params["code"]
     returned_state = query_params.get("state")
     
-    # Verify state - try query params first (more reliable), then session_state
-    expected_state = query_params.get("oauth_state") or st.session_state.get("oauth_state")
+    # Verify state - retrieve from session_state (persists across redirects)
+    expected_state = st.session_state.get("oauth_state")
     
     if not expected_state:
         st.error("❌ Auth session expired. Please click Sign in again.")
-        logger.error("No oauth_state in query params or session_state")
+        logger.error("No oauth_state found in session_state")
         return False
     
-    # Log which source provided the state for debugging
-    if query_params.get("oauth_state"):
-        logger.info(f"Retrieved expected_state from query_params: {expected_state[:8]}...")
-    else:
-        logger.info(f"Retrieved expected_state from session_state: {expected_state[:8]}...")
+    logger.info(f"Retrieved expected_state from session_state: {expected_state[:8]}...")
     
     if returned_state != expected_state:
         st.error("❌ Auth session expired. Please click Sign in again.")
