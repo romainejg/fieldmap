@@ -94,11 +94,13 @@ def clear_auth_state():
     Clear all OAuth-related state from session_state.
     Helper function to eliminate duplication.
     """
+    logger.info("clear_auth_state() - Clearing OAuth state from session")
     keys_to_clear = ["oauth_state", "auth_in_progress", "pending_auth_url"]
     for key in keys_to_clear:
         if key in st.session_state:
+            logger.debug(f"Deleting {key} from session_state")
             del st.session_state[key]
-    logger.debug("Cleared auth state from session_state")
+    logger.info("Auth state cleared from session_state")
 
 
 def build_auth_url() -> Optional[str]:
@@ -110,18 +112,30 @@ def build_auth_url() -> Optional[str]:
     Returns:
         Authorization URL or None if config not available
     """
+    logger.info("="*80)
+    logger.info("build_auth_url() - Generating OAuth authorization URL")
+    logger.info("="*80)
+    
     # Check if auth is already in progress to avoid overwriting state
-    if st.session_state.get("auth_in_progress", False):
+    auth_in_progress = st.session_state.get("auth_in_progress", False)
+    logger.info(f"auth_in_progress flag: {auth_in_progress}")
+    
+    if auth_in_progress:
         logger.warning("Auth already in progress, not generating new state")
         # Return existing auth_url if available
         existing_url = st.session_state.get("pending_auth_url")
         if existing_url:
+            logger.info(f"Returning existing auth URL: {existing_url[:60]}...")
             return existing_url
         # If no existing URL but auth in progress, clear the flag and continue
+        logger.warning("auth_in_progress=True but no pending_auth_url, clearing flag")
         st.session_state["auth_in_progress"] = False
     
     config = get_oauth_config()
     redirect_uri = get_redirect_uri()
+    
+    logger.info(f"OAuth config available: {config is not None}")
+    logger.info(f"Redirect URI: {redirect_uri}")
     
     if not config or not redirect_uri:
         logger.error("OAuth config or redirect URI not available")
@@ -129,6 +143,7 @@ def build_auth_url() -> Optional[str]:
     
     try:
         # Create OAuth2Session
+        logger.debug("Creating OAuth2Session")
         client = OAuth2Session(
             client_id=config["client_id"],
             client_secret=config["client_secret"],
@@ -137,6 +152,7 @@ def build_auth_url() -> Optional[str]:
         )
         
         # Generate authorization URL with state
+        logger.debug("Calling create_authorization_url()")
         auth_url, state = client.create_authorization_url(
             GOOGLE_AUTH_ENDPOINT,
             access_type="offline",
@@ -145,17 +161,22 @@ def build_auth_url() -> Optional[str]:
         
         # Store state in session_state for verification
         # Session state persists across redirects within the same browser session
+        logger.info(f"Generated state: {state}")
+        logger.info(f"Storing state in session_state['oauth_state']")
         st.session_state["oauth_state"] = state
         
         # Set auth_in_progress flag to prevent state overwrite on reruns
+        logger.info("Setting auth_in_progress=True")
         st.session_state["auth_in_progress"] = True
         st.session_state["pending_auth_url"] = auth_url
         
-        logger.info(f"Generated auth URL with state: {state[:8]}...")
+        logger.info(f"Generated auth URL: {auth_url[:100]}...")
+        logger.info(f"Session state keys after build_auth_url: {list(st.session_state.keys())}")
+        logger.info("="*80)
         return auth_url
         
     except Exception as e:
-        logger.error(f"Failed to build auth URL: {e}")
+        logger.error(f"Failed to build auth URL: {e}", exc_info=True)
         st.error(f"Failed to generate authorization URL: {str(e)}")
         return None
 
@@ -169,30 +190,63 @@ def handle_callback() -> bool:
     Returns:
         True if authentication successful, False otherwise
     """
+    logger.info("="*80)
+    logger.info("handle_callback() - Processing OAuth callback")
+    logger.info("="*80)
+    
     query_params = st.query_params
+    logger.info(f"Query params: {dict(query_params)}")
+    logger.info(f"Session state keys: {list(st.session_state.keys())}")
     
     # Check if we have the required params
     if "code" not in query_params:
-        logger.warning("No code in query params")
+        logger.warning("No code in query params - cannot proceed")
         return False
     
     code = query_params["code"]
     returned_state = query_params.get("state")
     
+    logger.info(f"Code received: {code[:20]}...")
+    logger.info(f"State from Google: {returned_state[:16] if returned_state else 'MISSING'}...")
+    
     # Verify state - retrieve from session_state (persists across redirects)
     expected_state = st.session_state.get("oauth_state")
     
+    logger.info("Checking for oauth_state in session_state...")
     if not expected_state:
+        logger.error("="*80)
+        logger.error("CRITICAL: No oauth_state found in session_state")
+        logger.error("="*80)
+        logger.error(f"All session_state keys: {list(st.session_state.keys())}")
+        logger.error(f"All query_params: {dict(query_params)}")
+        
+        # Check if there's an auth_in_progress flag
+        if st.session_state.get("auth_in_progress"):
+            logger.error("auth_in_progress=True but oauth_state is missing - this indicates state was lost")
+        else:
+            logger.error("auth_in_progress not set - this may indicate session was completely reset")
+        
         st.error("❌ Auth session expired. Please click Sign in again.")
-        logger.error("No oauth_state found in session_state")
+        logger.error("Showing 'Auth session expired' error to user")
         return False
     
-    logger.info(f"Retrieved expected_state from session_state: {expected_state[:8]}...")
+    logger.info(f"Retrieved expected_state from session_state: {expected_state}")
+    logger.info(f"Expected state (first 16 chars): {expected_state[:16]}")
+    logger.info(f"Returned state (first 16 chars): {returned_state[:16] if returned_state else 'MISSING'}")
     
+    # Compare states
     if returned_state != expected_state:
+        logger.error("="*80)
+        logger.error("CRITICAL: State mismatch detected")
+        logger.error("="*80)
+        logger.error(f"Expected: {expected_state}")
+        logger.error(f"Received: {returned_state}")
+        logger.error(f"States match: {returned_state == expected_state}")
+        
         st.error("❌ Auth session expired. Please click Sign in again.")
-        logger.error(f"State mismatch: expected {expected_state[:8]}..., got {returned_state[:8] if returned_state else 'None'}...")
         return False
+    
+    logger.info("✓ State verification successful - states match!")
     
     # Get config
     config = get_oauth_config()
@@ -203,8 +257,11 @@ def handle_callback() -> bool:
         logger.error("OAuth config or redirect URI not available during callback")
         return False
     
+    logger.info("OAuth config and redirect URI available")
+    
     try:
         # Create OAuth2Session with the same settings
+        logger.info("Creating OAuth2Session for token exchange")
         client = OAuth2Session(
             client_id=config["client_id"],
             client_secret=config["client_secret"],
@@ -212,31 +269,44 @@ def handle_callback() -> bool:
         )
         
         # Exchange code for token
+        logger.info("Exchanging authorization code for access token...")
         token = client.fetch_token(
             GOOGLE_TOKEN_ENDPOINT,
             grant_type="authorization_code",
             code=code
         )
         
+        logger.info("✓ Successfully obtained access token from Google")
+        logger.info(f"Token keys: {list(token.keys())}")
+        
         # Store token in session_state
+        logger.info("Storing token in session_state")
         st.session_state["google_token"] = token
         
         # Clean up OAuth state using helper function
+        logger.info("Clearing auth state (oauth_state, auth_in_progress, pending_auth_url)")
         clear_auth_state()
         
         # Save token to Google Drive for persistence
         # Note: This is best-effort; if it fails, user will need to re-auth next session
         try:
+            logger.info("Attempting to save token to Google Drive...")
             save_token_to_drive(token)
+            logger.info("✓ Token saved to Drive")
         except Exception as e:
             logger.warning(f"Could not save token to Drive (non-critical): {e}")
         
-        logger.info("Successfully obtained OAuth token")
+        logger.info("="*80)
+        logger.info("OAuth authentication completed successfully!")
+        logger.info("="*80)
         return True
         
     except Exception as e:
+        logger.error("="*80)
+        logger.error("CRITICAL: Token exchange failed")
+        logger.error("="*80)
+        logger.error(f"Error: {e}", exc_info=True)
         st.error(f"❌ Authentication failed: {str(e)}")
-        logger.error(f"Token exchange failed: {e}")
         return False
 
 

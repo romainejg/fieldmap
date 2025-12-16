@@ -16,14 +16,28 @@ from datetime import datetime
 from pathlib import Path
 import numpy as np
 import logging
+import sys
 from urllib.parse import urlencode
 from components.photo_editor import photo_editor, decode_image_from_dataurl
 from streamlit_sortables import sort_items
 from google_auth import GoogleAuthHelper
 from storage import LocalFolderStorage, GoogleDriveStorage
 
+# Configure comprehensive logging for OAuth debugging
+# This configures the root logger to output to console
+logging.basicConfig(
+    level=logging.DEBUG,  # Capture all levels
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # Output to stdout for Streamlit Cloud logs
+    ]
+)
+
 # Configure logger for this module
 logger = logging.getLogger(__name__)
+logger.info("="*80)
+logger.info("Fieldmap Application Starting")
+logger.info("="*80)
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -1213,13 +1227,24 @@ class AboutPage(BasePage):
                 st.markdown("Sign in with Google to access Fieldmap")
                 
                 if st.button("Sign in with Google", key="google_signin_about", type="primary", use_container_width=True):
+                    logger.info("="*80)
+                    logger.info("User clicked 'Sign in with Google' button")
+                    logger.info("="*80)
+                    logger.info(f"Session state before build_auth_url: {list(st.session_state.keys())}")
+                    
                     auth_url = google_oauth.build_auth_url()
+                    
+                    logger.info(f"build_auth_url() returned: {auth_url[:60] if auth_url else 'None'}...")
+                    logger.info(f"Session state after build_auth_url: {list(st.session_state.keys())}")
+                    
                     if auth_url:
+                        logger.info("Initiating redirect to Google OAuth...")
                         # Immediately show JS redirect
                         safe_url = json.dumps(auth_url)
                         components.html(
                             f"""
                             <script>
+                                console.log("Redirecting to Google OAuth...");
                                 window.top.location.href = {safe_url};
                             </script>
                             """,
@@ -1235,6 +1260,7 @@ class AboutPage(BasePage):
                         )
                         st.caption("⬆️ Click above if you weren't automatically redirected")
                     else:
+                        logger.error("build_auth_url() returned None - cannot proceed with OAuth")
                         st.error("Failed to generate authorization URL. Check OAuth Debug Info below.")
                 
                 # Add guidance about test users
@@ -1263,23 +1289,42 @@ class AboutPage(BasePage):
                     else:
                         st.error("❌ OAuth client not configured")
                     
+                    st.markdown("---")
+                    st.markdown("**Current Session State (OAuth-related):**")
+                    oauth_keys = ['oauth_state', 'auth_in_progress', 'pending_auth_url', 'google_token', 'google_authed', 'google_user_email']
+                    for key in oauth_keys:
+                        if key in st.session_state:
+                            value = st.session_state[key]
+                            if key == 'oauth_state':
+                                st.text(f"✓ {key}: {value[:16]}... (length: {len(value)})")
+                            elif key == 'google_token':
+                                st.text(f"✓ {key}: <token present, keys: {list(value.keys())}>")
+                            elif key == 'pending_auth_url':
+                                st.text(f"✓ {key}: {value[:60]}...")
+                            else:
+                                st.text(f"✓ {key}: {value}")
+                        else:
+                            st.text(f"✗ {key}: (not set)")
+                    
                     st.markdown("**Current Query Parameters:**")
                     if query_params:
                         for key, value in query_params.items():
-                            st.text(f"{key}: {value}")
+                            # Show full value for state, truncate for code
+                            if key == 'code':
+                                st.text(f"{key}: {value[:30]}...")
+                            elif key == 'state':
+                                st.text(f"{key}: {value}")
+                            else:
+                                st.text(f"{key}: {value}")
                     else:
                         st.text("(none)")
                     
-                    st.markdown("**OAuth State in Session:**")
-                    oauth_state = st.session_state.get('oauth_state', '(not set)')
-                    if oauth_state != '(not set)':
-                        st.text(f"{oauth_state[:16]}...")
-                    else:
-                        st.text(oauth_state)
+                    st.markdown("---")
+                    st.markdown("**All Session State Keys:**")
+                    st.text(f"{list(st.session_state.keys())}")
                     
-                    st.markdown("**Token Present:**")
-                    token_present = "google_token" in st.session_state
-                    st.text(str(token_present))
+                    st.markdown("**Logging Instructions:**")
+                    st.caption("Check Streamlit Cloud logs (Manage app → Logs) for detailed OAuth flow debugging information.")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1382,23 +1427,65 @@ class App:
         # This processes query params from Google OAuth redirect at the root URL
         query_params = st.query_params
         
+        # EXTENSIVE DEBUG LOGGING for OAuth callback
+        logger.info("="*80)
+        logger.info("App.run() - Starting execution")
+        logger.info("="*80)
+        logger.info(f"Query params present: {dict(query_params)}")
+        logger.info(f"Session state keys: {list(st.session_state.keys())}")
+        
+        # Log OAuth-related session state in detail
+        if 'oauth_state' in st.session_state:
+            logger.info(f"oauth_state in session_state: {st.session_state['oauth_state'][:16]}...")
+        else:
+            logger.warning("oauth_state NOT in session_state")
+        
+        if 'auth_in_progress' in st.session_state:
+            logger.info(f"auth_in_progress: {st.session_state['auth_in_progress']}")
+        
+        if 'google_token' in st.session_state:
+            logger.info("google_token present in session_state")
+        else:
+            logger.debug("google_token NOT in session_state")
+        
         if 'code' in query_params and 'state' in query_params:
+            logger.info("="*80)
+            logger.info("OAuth callback detected - processing authentication")
+            logger.info("="*80)
+            
+            # Log all query params for debugging (sanitize sensitive data)
+            logger.info(f"code param: {query_params['code'][:20]}..." if 'code' in query_params else "code: MISSING")
+            logger.info(f"state param: {query_params['state'][:16]}..." if 'state' in query_params else "state: MISSING")
+            
             # Use new google_oauth module for callback handling
             import google_oauth
             
+            logger.info("Calling google_oauth.handle_callback()...")
+            
             with st.spinner("Completing sign-in..."):
-                if google_oauth.handle_callback():
+                callback_result = google_oauth.handle_callback()
+                logger.info(f"handle_callback() returned: {callback_result}")
+                
+                if callback_result:
+                    logger.info("OAuth callback successful - setting session state")
                     st.session_state.google_authed = True
                     st.session_state.google_user_email = google_oauth.get_user_email()
+                    logger.info(f"User email: {st.session_state.google_user_email}")
+                    
                     # Clear ALL query params (including oauth_state, code, state)
+                    logger.info("Clearing all query params")
                     st.query_params.clear()
                     st.success("✅ Successfully signed in!")
+                    logger.info("OAuth flow completed successfully - triggering rerun")
                     st.rerun()
                 else:
+                    logger.error("OAuth callback FAILED")
                     # Error message already shown by handle_callback()
                     # Clear ALL query params on failure too
+                    logger.info("Clearing query params after failure")
                     st.query_params.clear()
                     # Clean up any OAuth state using helper function
+                    logger.info("Cleaning up auth state")
                     google_oauth.clear_auth_state()
             st.stop()
         
