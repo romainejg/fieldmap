@@ -32,6 +32,25 @@ logger.info("="*80)
 logger.info("Fieldmap Application Starting")
 logger.info("="*80)
 
+
+def parse_service_account_json(sa_json):
+    """
+    Parse service account JSON from either string or dict format.
+    
+    Args:
+        sa_json: Service account JSON as string or dict
+        
+    Returns:
+        dict: Parsed service account data
+        
+    Raises:
+        json.JSONDecodeError: If string format is invalid JSON
+    """
+    if isinstance(sa_json, str):
+        return json.loads(sa_json)
+    return sa_json
+
+
 # Configure page for mobile optimization
 st.set_page_config(
     page_title="Fieldmap - Lab Photos",
@@ -1387,9 +1406,9 @@ class App:
                 storage_backend = GoogleDriveStorage(service_account_info)
                 logger.info("✓ Google Drive storage (service account) initialized successfully")
                 
-                # Test connection
+                # Test connection using public method
                 try:
-                    service = storage_backend._get_service()
+                    storage_backend.test_connection()
                     logger.info("✓ Successfully connected to Google Drive API")
                 except Exception as e:
                     logger.error(f"✗ Failed to connect to Google Drive API: {e}", exc_info=True)
