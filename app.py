@@ -32,11 +32,11 @@ logger.info("="*80)
 logger.info("Fieldmap Application Starting")
 logger.info("="*80)
 
-# Diagnostic: Log available secret keys at startup (for debugging missing GOOGLE_SERVICE_ACCOUNT_JSON)
-# This will be called again in get_service_account_info() with more details
+# Diagnostic: Log count of secret keys at startup (avoid exposing sensitive key names)
+# Detailed key names will be logged only when get_service_account_info() is called
 try:
-    available_secret_keys = list(st.secrets.keys())
-    logger.info(f"Startup diagnostic - Available secret keys: {available_secret_keys}")
+    secret_count = len(list(st.secrets.keys()))
+    logger.info(f"Startup diagnostic - Found {secret_count} secret key(s) in st.secrets")
 except Exception as e:
     logger.error(f"Failed to access st.secrets during startup diagnostic: {e}")
 
@@ -192,8 +192,9 @@ def get_service_account_info():
     Raises:
         KeyError: If GOOGLE_SERVICE_ACCOUNT_JSON is missing from secrets
     """
+    available_keys = []  # Track for error message
     try:
-        # Get available keys for diagnostic purposes
+        # Get available keys for diagnostic purposes (only when needed)
         available_keys = log_available_secret_keys()
         
         # Try to get service account JSON from secrets (exact key match, case-sensitive)
@@ -216,8 +217,7 @@ def get_service_account_info():
             logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON is present but empty")
             return None
     except KeyError:
-        # Key doesn't exist - provide detailed error message
-        available_keys = list(st.secrets.keys()) if hasattr(st, 'secrets') else []
+        # Key doesn't exist - provide detailed error message using already-retrieved keys
         error_msg = (
             f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets. "
             f"Available secret keys: {available_keys}. "
