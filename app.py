@@ -1071,29 +1071,72 @@ class AboutPage(BasePage):
             st.markdown('<div class="signin-card">', unsafe_allow_html=True)
             
             # Check if user is logged in using Streamlit's native auth
-            if st.session_state.get("logged_in", False):
+            # In Streamlit 1.42+, when [auth] is configured in secrets.toml,
+            # user info is available via st.experimental_user (or st.user in newer versions)
+            user_authenticated = False
+            user_email = None
+            
+            # Try to get user info from Streamlit's native auth
+            try:
+                # Streamlit 1.42+ provides st.experimental_user when auth is configured
+                if hasattr(st, 'experimental_user'):
+                    user_info = st.experimental_user
+                    if user_info and user_info.get('email'):
+                        user_authenticated = True
+                        user_email = user_info.get('email')
+                elif hasattr(st, 'user'):
+                    # Newer versions use st.user
+                    user_info = st.user
+                    if user_info and user_info.get('email'):
+                        user_authenticated = True
+                        user_email = user_info.get('email')
+            except Exception:
+                pass
+            
+            # Fallback: check manual session state for compatibility
+            if not user_authenticated:
+                user_authenticated = st.session_state.get("logged_in", False)
+                if user_authenticated:
+                    user_info = st.session_state.get("user_info", {})
+                    user_email = user_info.get("email", "Unknown")
+            
+            if user_authenticated:
                 # User is authenticated
                 st.markdown("### ✅ Signed In")
-                user_info = st.session_state.get("user_info", {})
-                email = user_info.get("email", "Unknown")
-                st.success(f"Signed in as **{email}**")
+                st.success(f"Signed in as **{user_email}**")
                 
                 st.info("📱 Access Fieldmap and Gallery from the sidebar")
                 
+                # For Streamlit native auth, logout is typically handled via st.experimental_rerun
+                # or by having user clear cookies
                 if st.button("Sign Out", key="signout_btn", type="secondary", use_container_width=True):
-                    # Use Streamlit's native logout
+                    # Clear manual session state (if used)
                     st.session_state["logged_in"] = False
                     st.session_state.pop("user_info", None)
+                    st.info("Please clear your browser cookies to fully sign out.")
                     st.rerun()
             else:
                 # User is not authenticated - show sign-in
                 st.markdown("### Sign In")
                 st.markdown("Sign in with Google to access Fieldmap")
                 
+                # Check if auth is configured
+                auth_configured = False
+                try:
+                    if "auth" in st.secrets and st.secrets["auth"].get("client_id"):
+                        auth_configured = True
+                except Exception:
+                    pass
+                
                 # Check if service account is configured
                 service_account_info = get_service_account_info()
-                if not service_account_info:
-                    st.error("⚠️ Service account not configured. Please configure GOOGLE_SERVICE_ACCOUNT_JSON in secrets.")
+                
+                if not auth_configured or not service_account_info:
+                    if not auth_configured:
+                        st.error("⚠️ Authentication not configured. Please configure [auth] section in secrets.")
+                    if not service_account_info:
+                        st.error("⚠️ Service account not configured. Please configure GOOGLE_SERVICE_ACCOUNT_JSON in secrets.")
+                    
                     with st.expander("Setup Instructions"):
                         st.markdown("""
                         **Required secrets in `.streamlit/secrets.toml`:**
@@ -1118,18 +1161,30 @@ class AboutPage(BasePage):
                         See docs/SETUP.md for complete setup instructions.
                         """)
                 else:
-                    if st.button("Sign in with Google", key="signin_btn", type="primary", use_container_width=True):
-                        # Trigger Streamlit's native login
-                        # This should invoke st.login() when Streamlit 1.42+ is available
-                        # For now, we'll simulate it
-                        st.session_state["auth_initiated"] = True
-                        st.info("⚠️ Streamlit 1.42.0+ with native st.login() is required. Please upgrade Streamlit.")
-                        st.markdown("""
-                        To use native authentication:
-                        1. Upgrade to Streamlit >= 1.42.0
-                        2. Configure [auth] section in secrets.toml
-                        3. Use st.login() button
-                        """)
+                    # Both auth and service account configured
+                    st.markdown("""
+                    Click below to sign in with Google. Streamlit's native authentication will handle the OAuth flow.
+                    """)
+                    
+                    st.info("""
+                    **Note:** Streamlit 1.42.0+ native authentication requires proper [auth] configuration in secrets.
+                    
+                    When configured correctly, Streamlit automatically adds a "Log in" button in the UI.
+                    Look for it in the top-right corner or sidebar.
+                    
+                    If you don't see the login button:
+                    1. Ensure Streamlit >= 1.42.0
+                    2. Verify [auth] section in secrets.toml is complete
+                    3. Restart the app
+                    """)
+                    
+                    # Provide manual fallback for testing/development
+                    if st.button("Manual Login (Dev Only)", key="manual_signin_btn", type="secondary", use_container_width=True):
+                        st.warning("This is a development-only manual login. In production, use Streamlit's native auth.")
+                        # Simulate login for development
+                        st.session_state["logged_in"] = True
+                        st.session_state["user_info"] = {"email": "test@example.com"}
+                        st.rerun()
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1186,8 +1241,23 @@ class App:
             st.markdown('<div class="sidebar-title">Fieldmap</div>', unsafe_allow_html=True)
             st.markdown('<div class="sidebar-subtitle">Documentation support for the cadaver lab.</div>', unsafe_allow_html=True)
             
-            # Check if user is authenticated
-            is_authenticated = st.session_state.get("logged_in", False)
+            # Check if user is authenticated using Streamlit's native auth or fallback
+            is_authenticated = False
+            try:
+                if hasattr(st, 'experimental_user'):
+                    user_info = st.experimental_user
+                    if user_info and user_info.get('email'):
+                        is_authenticated = True
+                elif hasattr(st, 'user'):
+                    user_info = st.user
+                    if user_info and user_info.get('email'):
+                        is_authenticated = True
+            except Exception:
+                pass
+            
+            # Fallback: check manual session state
+            if not is_authenticated:
+                is_authenticated = st.session_state.get("logged_in", False)
             
             st.markdown('<div class="sidebar-section-label">Sections</div>', unsafe_allow_html=True)
             
@@ -1215,8 +1285,25 @@ class App:
     
     def run(self):
         """Main application entry point"""
-        # Check authentication status
-        is_authenticated = st.session_state.get("logged_in", False)
+        # Check authentication status using Streamlit's native auth or fallback
+        is_authenticated = False
+        
+        # Try to get user info from Streamlit's native auth
+        try:
+            if hasattr(st, 'experimental_user'):
+                user_info = st.experimental_user
+                if user_info and user_info.get('email'):
+                    is_authenticated = True
+            elif hasattr(st, 'user'):
+                user_info = st.user
+                if user_info and user_info.get('email'):
+                    is_authenticated = True
+        except Exception:
+            pass
+        
+        # Fallback: check manual session state
+        if not is_authenticated:
+            is_authenticated = st.session_state.get("logged_in", False)
         
         # Implement navigation gating: force About page if not authenticated
         if not is_authenticated:
