@@ -47,6 +47,14 @@ st = MockStreamlit()
 # Now import our module
 import google_oauth
 
+
+def cleanup_env_vars(*keys):
+    """Helper function to safely cleanup environment variables"""
+    for key in keys:
+        if key in os.environ:
+            del os.environ[key]
+
+
 def test_config_functions():
     """Test configuration retrieval functions"""
     print("\n=== Testing Configuration Functions ===")
@@ -78,18 +86,17 @@ def test_config_functions():
     print("✓ get_redirect_uri() returns APP_BASE_URL")
     
     # Cleanup
-    del os.environ['GOOGLE_CLIENT_ID']
-    del os.environ['GOOGLE_CLIENT_SECRET']
-    del os.environ['APP_BASE_URL']
+    cleanup_env_vars('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL')
 
 def test_auth_url_generation():
-    """Test auth URL generation"""
+    """Test auth URL generation with signed state tokens"""
     print("\n=== Testing Auth URL Generation ===")
     
     # Set up config
     os.environ['GOOGLE_CLIENT_ID'] = 'test_client_id'
     os.environ['GOOGLE_CLIENT_SECRET'] = 'test_secret'
     os.environ['APP_BASE_URL'] = 'https://test.example.com'
+    os.environ['OAUTH_STATE_SECRET'] = 'test-secret-for-signing'
     
     # Clear any existing state
     st.session_state.clear()
@@ -97,12 +104,9 @@ def test_auth_url_generation():
     
     auth_url = google_oauth.build_auth_url()
     
-    # Check that state was stored in session_state
-    assert 'oauth_state' in st.session_state
-    state = st.session_state['oauth_state']
-    assert state is not None
-    assert len(state) > 20  # Should be a long random string
-    print(f"✓ build_auth_url() generated state in session_state: {state[:10]}...")
+    # With stateless signed tokens, oauth_state is NOT stored in session_state
+    assert 'oauth_state' not in st.session_state
+    print(f"✓ build_auth_url() does not store state in session_state (stateless)")
     
     # Check that auth_in_progress flag was set
     assert st.session_state.get('auth_in_progress') == True
@@ -112,27 +116,31 @@ def test_auth_url_generation():
     assert st.session_state.get('pending_auth_url') == auth_url
     print(f"✓ build_auth_url() stored pending_auth_url")
     
-    # Check that URL was generated
+    # Check that URL was generated with state parameter
     assert auth_url is not None
     assert 'accounts.google.com' in auth_url
     assert 'client_id=test_client_id' in auth_url
-    assert f'state={state}' in auth_url
-    print(f"✓ build_auth_url() generated valid URL")
     
-    # Test that calling again doesn't overwrite state
-    old_state = state
+    # Extract state from URL
+    import urllib.parse
+    parsed = urllib.parse.urlparse(auth_url)
+    params = urllib.parse.parse_qs(parsed.query)
+    assert 'state' in params
+    state = params['state'][0]
+    assert state is not None
+    assert len(state) > 20  # Should be a signed token string
+    print(f"✓ build_auth_url() generated valid URL with signed state: {state[:20]}...")
+    
+    # Test that calling again doesn't regenerate when auth_in_progress
     old_url = auth_url
     auth_url2 = google_oauth.build_auth_url()
     assert auth_url2 == old_url  # Should return same URL
-    assert st.session_state['oauth_state'] == old_state  # State should not change
-    print(f"✓ build_auth_url() doesn't overwrite state when auth_in_progress is True")
+    print(f"✓ build_auth_url() doesn't regenerate URL when auth_in_progress is True")
     
     # Cleanup
     st.session_state.clear()
     st.query_params.clear()
-    del os.environ['GOOGLE_CLIENT_ID']
-    del os.environ['GOOGLE_CLIENT_SECRET']
-    del os.environ['APP_BASE_URL']
+    cleanup_env_vars('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL', 'OAUTH_STATE_SECRET')
 
 def test_authentication_check():
     """Test authentication status check"""
@@ -161,37 +169,46 @@ def test_sign_out():
     
     # Set up some state
     st.session_state['google_token'] = {'access_token': 'test'}
-    st.session_state['oauth_state'] = 'test_state'
     st.session_state['auth_in_progress'] = True
     st.session_state['pending_auth_url'] = 'https://example.com'
     
     google_oauth.sign_out()
     
     assert 'google_token' not in st.session_state
-    assert 'oauth_state' not in st.session_state
+    # Note: oauth_state is not stored in session_state anymore with signed tokens
     assert 'auth_in_progress' not in st.session_state
     assert 'pending_auth_url' not in st.session_state
-    print("✓ sign_out() clears token, state, and auth flags")
+    print("✓ sign_out() clears token and auth flags")
 
-def test_callback_with_session_state():
-    """Test callback handling with state in session_state"""
-    print("\n=== Testing Callback with Session State ===")
+def test_callback_with_signed_state():
+    """Test callback handling with signed state tokens (stateless)"""
+    print("\n=== Testing Callback with Signed State ===")
     
     # Set up config
     os.environ['GOOGLE_CLIENT_ID'] = 'test_client_id'
     os.environ['GOOGLE_CLIENT_SECRET'] = 'test_secret'
     os.environ['APP_BASE_URL'] = 'https://test.example.com'
+    os.environ['OAUTH_STATE_SECRET'] = 'test-secret-for-callback'
+    os.environ['OAUTH_STATE_MAX_AGE'] = '300'
     
-    # Simulate state stored in session_state (persists across redirect)
+    # Clear session state (simulating session loss)
     st.session_state.clear()
     st.query_params.clear()
-    test_state = 'test_oauth_state_12345'
-    st.session_state['oauth_state'] = test_state
-    st.query_params['state'] = test_state
+    
+    # Generate a signed state token (similar to what build_auth_url does)
+    serializer = google_oauth.get_state_serializer()
+    import secrets
+    state_payload = {"nonce": secrets.token_hex(16)}
+    signed_state = serializer.dumps(state_payload)
+    
+    # Simulate callback with signed state in query params
+    st.query_params['state'] = signed_state
     st.query_params['code'] = 'test_auth_code'
     
+    print(f"Signed state token: {signed_state[:30]}...")
+    
     # Note: We can't fully test handle_callback without mocking the OAuth2 client
-    # But we can verify it retrieves state from query params
+    # But we can verify it verifies the signed state token
     from unittest.mock import patch, MagicMock
     
     # Mock the OAuth2Session to avoid actual API calls
@@ -209,9 +226,9 @@ def test_callback_with_session_state():
         with patch('google_oauth.save_token_to_drive', return_value=True):
             result = google_oauth.handle_callback()
             
-            # Should succeed because state matches
+            # Should succeed because signed state is valid
             assert result == True
-            print("✓ handle_callback() succeeds with state from session_state")
+            print("✓ handle_callback() succeeds with stateless signed state verification")
             
             # Check that token was stored
             assert 'google_token' in st.session_state
@@ -225,9 +242,9 @@ def test_callback_with_session_state():
     # Cleanup
     st.session_state.clear()
     st.query_params.clear()
-    del os.environ['GOOGLE_CLIENT_ID']
-    del os.environ['GOOGLE_CLIENT_SECRET']
-    del os.environ['APP_BASE_URL']
+    for key in ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL', 'OAUTH_STATE_SECRET', 'OAUTH_STATE_MAX_AGE']:
+        if key in os.environ:
+            del os.environ[key]
 
 def main():
     """Run all tests"""
@@ -240,7 +257,7 @@ def main():
         test_auth_url_generation()
         test_authentication_check()
         test_sign_out()
-        test_callback_with_session_state()
+        test_callback_with_signed_state()
         
         print("\n" + "=" * 60)
         print("✅ All tests passed!")

@@ -45,6 +45,9 @@ Quick overview:
 ### Local Development
 
 ```bash
+# Set OAuth state secret for secure callback validation
+export OAUTH_STATE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
 # Create secrets file
 mkdir -p .streamlit
 cat > .streamlit/secrets.toml << EOF
@@ -57,6 +60,7 @@ GOOGLE_OAUTH_CLIENT_JSON = '''
 }
 '''
 GOOGLE_REDIRECT_URI = "http://localhost:8501"
+OAUTH_STATE_SECRET = "$OAUTH_STATE_SECRET"
 EOF
 
 # Run the app
@@ -159,15 +163,52 @@ All photos are stored in Google Drive using the `GoogleDriveStorage` backend:
 
 ## 🧪 Testing
 
+### Unit Tests
+
 Run all tests:
 
 ```bash
 python test_derived_photos.py      # Storage tests
 python test_integration.py         # Workflow tests
 python test_photo_editor_component.py  # Component tests
+python test_google_oauth_state.py  # OAuth state signing/verification tests
 ```
 
 All tests should pass with backward compatibility for existing photos.
+
+### Testing OAuth State Security
+
+To test the stateless OAuth state flow locally:
+
+```bash
+# 1. Set up OAuth state secret
+export OAUTH_STATE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+export OAUTH_STATE_MAX_AGE=300
+
+# 2. Set up OAuth credentials (if not already in secrets.toml)
+export GOOGLE_CLIENT_ID="your-client-id"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+export APP_BASE_URL="http://localhost:8501"
+
+# 3. Run the app
+streamlit run app.py
+
+# 4. Test the OAuth flow
+# - Click "Sign in with Google"
+# - Complete the OAuth consent flow
+# - Verify successful authentication even if session state is reset
+```
+
+**To simulate session loss**:
+1. Start the OAuth flow (click "Sign in with Google")
+2. In a new browser tab, navigate directly to the app root to reset session state
+3. Complete the OAuth consent in the original tab
+4. The callback should succeed due to stateless signed state verification
+
+**Expected logs**:
+- "Generated signed OAuth state token" when initiating auth
+- "Verified signed OAuth state token" when callback succeeds
+- No "No oauth_state found in session_state" errors
 
 ## 📁 Project Structure
 
@@ -196,7 +237,9 @@ fieldmap/
 
 ## 🔐 Security
 
-- **OAuth2 Authentication**: Secure Google sign-in
+- **OAuth2 Authentication**: Secure Google sign-in with stateless signed state tokens
+- **CSRF Protection**: Cryptographically signed, time-limited state tokens prevent CSRF attacks
+- **Stateless Verification**: OAuth callbacks work even when session state is lost
 - **Limited Scope**: App only accesses files it creates
 - **No Plaintext Credentials**: Uses tokens, not passwords
 - **Gitignored Secrets**: `credentials.json` and `token.pickle` excluded
@@ -204,7 +247,27 @@ fieldmap/
 
 ## 🛠️ Configuration
 
-### Environment Variables (Optional)
+### Environment Variables
+
+#### OAuth State Security (Required for Production)
+
+For secure, stateless OAuth callback validation:
+
+```bash
+# Generate and set OAuth state secret (required for production)
+export OAUTH_STATE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# Optional: Set OAuth state token max age in seconds (default: 300 = 5 minutes)
+export OAUTH_STATE_MAX_AGE=300
+```
+
+**Why this matters**: The OAuth state secret is used to cryptographically sign state tokens, enabling stateless verification that works even when session state is lost across redirects. This prevents "No oauth_state found in session_state" errors.
+
+**For local development**: If not set, the app generates a random dev-only secret (but this won't work across app restarts).
+
+**For production (Streamlit Cloud)**: Add these to your app's secrets in Streamlit Cloud settings.
+
+#### Google Credentials (Optional)
 
 ```bash
 # Set custom credentials path
