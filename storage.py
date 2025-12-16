@@ -1,22 +1,17 @@
 """
 Storage abstraction layer for photo persistence.
-Supports local folder storage and Google Drive integration.
+Uses Google Drive with service account for server-to-server authentication.
 """
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 from PIL import Image
 import io
 from typing import Optional
-import pickle
-import os
 import logging
+import json
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
-
-# Google Drive API scope - allows app to access only files it creates
-GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 
 
 class PhotoStorage(ABC):
@@ -64,165 +59,46 @@ class PhotoStorage(ABC):
         pass
 
 
-class LocalFolderStorage(PhotoStorage):
-    """Local filesystem storage implementation"""
-    
-    def __init__(self, base_path: str = "./data"):
-        """
-        Initialize local folder storage.
-        
-        Args:
-            base_path: Base directory for storing photos (default: ./data)
-        """
-        self.base_path = Path(base_path)
-        self.base_path.mkdir(parents=True, exist_ok=True)
-    
-    def save_image(self, session_name: str, photo_id: int, pil_image: Image.Image) -> str:
-        """
-        Save an image to local filesystem.
-        
-        Args:
-            session_name: Name of the session
-            photo_id: Unique photo ID
-            pil_image: PIL Image object to save
-        
-        Returns:
-            File path to the saved image
-        """
-        # Create session directory if it doesn't exist
-        session_dir = self.base_path / session_name
-        session_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save as PNG
-        file_path = session_dir / f"photo_{photo_id}.png"
-        
-        # Ensure image is in RGB mode before saving
-        if pil_image.mode not in ('RGB', 'RGBA'):
-            pil_image = pil_image.convert('RGB')
-        
-        pil_image.save(file_path, format='PNG')
-        
-        return str(file_path)
-    
-    def load_image(self, uri: str) -> Image.Image:
-        """
-        Load an image from local filesystem.
-        
-        Args:
-            uri: File path to the image
-        
-        Returns:
-            PIL Image object
-        """
-        file_path = Path(uri)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Image not found at {uri}")
-        
-        return Image.open(file_path)
-    
-    def delete_image(self, uri: str) -> bool:
-        """
-        Delete an image from local filesystem.
-        
-        Args:
-            uri: File path to the image
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            file_path = Path(uri)
-            if file_path.exists():
-                file_path.unlink()
-                return True
-            return False
-        except Exception:
-            return False
-
-
-class GooglePhotosStorage(PhotoStorage):
-    """
-    Google Photos storage implementation - PLACEHOLDER ONLY.
-    
-    **DO NOT INSTANTIATE** - This class is not yet implemented.
-    
-    This is a placeholder for potential future Google Photos API integration.
-    If you need cloud storage now, use GoogleDriveStorage instead.
-    
-    Future implementation will:
-    - Authenticate with Google Photos Library API
-    - Upload images to Google Photos albums
-    - Download images from shared libraries
-    - Support album organization and metadata
-    
-    Note: Google Photos API has different permissions and quotas than Drive API.
-    """
-    
-    def __init__(self, credentials_path: Optional[str] = None):
-        """
-        Raises NotImplementedError - This storage backend is not implemented.
-        
-        Args:
-            credentials_path: Would be path to Google Photos API credentials
-        
-        Raises:
-            NotImplementedError: Always - this class is a placeholder only
-        """
-        raise NotImplementedError(
-            "Google Photos storage is not yet implemented. "
-            "Use GoogleDriveStorage or LocalFolderStorage instead."
-        )
-    
-    def save_image(self, session_name: str, photo_id: int, pil_image: Image.Image) -> str:
-        """Save image to Google Photos (not implemented)"""
-        raise NotImplementedError("Google Photos storage is not yet implemented")
-    
-    def load_image(self, uri: str) -> Image.Image:
-        """Load image from Google Photos (not implemented)"""
-        raise NotImplementedError("Google Photos storage is not yet implemented")
-    
-    def delete_image(self, uri: str) -> bool:
-        """Delete image from Google Photos (not implemented)"""
-        raise NotImplementedError("Google Photos storage is not yet implemented")
-
-
 class GoogleDriveStorage(PhotoStorage):
     """
-    Google Drive storage implementation.
-    Stores photos in user's Google Drive using OAuth2 authentication.
-    Also manages metadata index for cross-device sync.
+    Google Drive storage implementation using service account.
+    Stores photos in a shared Google Drive folder using server-to-server authentication.
+    No user OAuth required - uses service account credentials.
     """
     
-    def __init__(self, google_auth_helper):
+    def __init__(self, service_account_info: dict):
         """
-        Initialize Google Drive storage.
+        Initialize Google Drive storage with service account.
         
         Args:
-            google_auth_helper: GoogleAuthHelper instance with valid credentials
+            service_account_info: Service account credentials as dict
         """
-        self.google_auth = google_auth_helper
+        self.service_account_info = service_account_info
         self.service = None
         self.folder_cache = {}  # Cache folder IDs
         self.index_cache = None  # Cache for index.json
     
     def _get_service(self):
-        """Get or create Google Drive service."""
+        """Get or create Google Drive service using service account."""
         if self.service:
             return self.service
         
         try:
             from googleapiclient.discovery import build
+            from google.oauth2 import service_account
         except ImportError:
             raise ImportError(
                 "Google API libraries not installed. "
-                "Install with: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client"
+                "Install with: pip install google-auth google-auth-httplib2 google-api-python-client"
             )
         
-        creds = self.google_auth.get_credentials()
-        if not creds:
-            raise ValueError("No valid credentials available. Please authenticate first.")
+        # Create credentials from service account info
+        credentials = service_account.Credentials.from_service_account_info(
+            self.service_account_info,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
         
-        self.service = build('drive', 'v3', credentials=creds)
+        self.service = build('drive', 'v3', credentials=credentials)
         return self.service
     
     def _get_or_create_folder(self, folder_name: str, parent_id: Optional[str] = None) -> str:
@@ -287,7 +163,6 @@ class GoogleDriveStorage(PhotoStorage):
         
         try:
             from googleapiclient.http import MediaIoBaseDownload
-            import json
             
             service = self._get_service()
             
@@ -348,7 +223,6 @@ class GoogleDriveStorage(PhotoStorage):
         """
         try:
             from googleapiclient.http import MediaIoBaseUpload
-            import json
             
             service = self._get_service()
             
@@ -408,7 +282,7 @@ class GoogleDriveStorage(PhotoStorage):
             pil_image: PIL Image object to save
         
         Returns:
-            Google Drive file ID
+            Google Drive file ID (gdrive:// URI)
         """
         from googleapiclient.http import MediaIoBaseUpload
         
@@ -428,7 +302,6 @@ class GoogleDriveStorage(PhotoStorage):
         img_byte_arr.seek(0)
         
         # Upload file
-        # Note: file_name is generated from photo_id (integer), so it's safe from injection
         file_name = f'photo_{int(photo_id)}.png'
         file_metadata = {
             'name': file_name,
@@ -438,7 +311,6 @@ class GoogleDriveStorage(PhotoStorage):
         media = MediaIoBaseUpload(img_byte_arr, mimetype='image/png', resumable=True)
         
         # Check if file already exists
-        # Using f-string is safe here since file_name is validated above
         query = f"name='{file_name}' and '{session_folder_id}' in parents and trashed=false"
         results = service.files().list(
             q=query,
