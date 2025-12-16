@@ -41,22 +41,7 @@ except Exception as e:
     logger.error(f"Failed to access st.secrets during startup diagnostic: {e}")
 
 
-def parse_service_account_json(sa_json):
-    """
-    Parse service account JSON from either string or dict format.
-    
-    Args:
-        sa_json: Service account JSON as string or dict
-        
-    Returns:
-        dict: Parsed service account data
-        
-    Raises:
-        json.JSONDecodeError: If string format is invalid JSON
-    """
-    if isinstance(sa_json, str):
-        return json.loads(sa_json)
-    return sa_json
+
 
 
 # Configure page for mobile optimization
@@ -171,10 +156,10 @@ def log_available_secret_keys():
     try:
         available_keys = list(st.secrets.keys())
         logger.info(f"Available secret keys in st.secrets: {available_keys}")
-        if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
-            logger.info("✓ GOOGLE_SERVICE_ACCOUNT_JSON is present in st.secrets")
+        if "google_service_account" in st.secrets:
+            logger.info("✓ google_service_account is present in st.secrets")
         else:
-            logger.error("✗ GOOGLE_SERVICE_ACCOUNT_JSON is MISSING from st.secrets")
+            logger.error("✗ google_service_account is MISSING from st.secrets")
             logger.error(f"   Available keys: {available_keys}")
         return available_keys
     except Exception as e:
@@ -188,51 +173,27 @@ def get_service_account_info():
     
     Returns:
         dict: Service account info or None if not configured
-        
-    Raises:
-        KeyError: If GOOGLE_SERVICE_ACCOUNT_JSON is missing from secrets
     """
     available_keys = []
     try:
         # Get available keys for diagnostic purposes (only when needed)
         available_keys = log_available_secret_keys()
         
-        # Try to get service account JSON from secrets (exact key match, case-sensitive)
-        # This will raise KeyError if the key doesn't exist
-        service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+        # Try to get service account from TOML table (new format)
+        if "google_service_account" in st.secrets:
+            service_account_dict = dict(st.secrets["google_service_account"])
+            logger.info("Service account found in secrets (TOML table format)")
+            logger.info(f"Service account email: {service_account_dict.get('client_email', 'N/A')}")
+            return service_account_dict
         
-        if service_account_json:
-            logger.info("Service account JSON found in secrets")
-            if isinstance(service_account_json, str):
-                try:
-                    parsed = json.loads(service_account_json)
-                    logger.info(f"Service account parsed successfully. Email: {parsed.get('client_email', 'N/A')}")
-                    return parsed
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse service account JSON: {e}")
-                    return None
-            logger.info(f"Service account already parsed. Email: {service_account_json.get('client_email', 'N/A')}")
-            return service_account_json
-        else:
-            logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON is present but empty")
-            return None
-    except KeyError:
-        # Key doesn't exist - provide detailed error message
-        # Use already-retrieved available_keys if populated, otherwise get them now
-        if not available_keys:
-            available_keys = list(st.secrets.keys()) if hasattr(st, 'secrets') else []
+        # Log warning if not found
+        logger.warning("google_service_account is missing from Streamlit secrets.")
+        logger.info(f"Available secret keys: {available_keys}")
+        logger.info("Please add [google_service_account] table to your secrets:")
+        logger.info("  - Streamlit Cloud: Settings > Secrets")
+        logger.info("  - Local development: .streamlit/secrets.toml")
+        return None
         
-        error_msg = (
-            f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets.\n"
-            f"Available secret keys: {available_keys}\n\n"
-            f"Please ensure you have added GOOGLE_SERVICE_ACCOUNT_JSON to your secrets:\n"
-            f"  - Streamlit Cloud: Settings > Secrets\n"
-            f"  - Local development: .streamlit/secrets.toml\n\n"
-            f"IMPORTANT: The key name is case-sensitive and must be exactly 'GOOGLE_SERVICE_ACCOUNT_JSON'.\n"
-            f"Use triple double quotes (\"\"\") for TOML multiline strings, NOT triple single quotes (''')."
-        )
-        logger.error(error_msg)
-        raise KeyError(error_msg)
     except Exception as e:
         logger.error(f"Failed to load service account info: {e}", exc_info=True)
         return None
@@ -278,10 +239,10 @@ def check_auth_configuration():
         issues.append(f"Error accessing secrets: {str(e)}")
         logger.error(f"Error accessing secrets: {e}", exc_info=True)
     
-    # Check service account
+    # Check service account (don't raise, just check)
     service_account = get_service_account_info()
     if not service_account:
-        issues.append("GOOGLE_SERVICE_ACCOUNT_JSON is missing or invalid")
+        issues.append("google_service_account is missing or invalid")
         logger.error("Service account configuration is missing or invalid")
     else:
         logger.info("Service account configuration validated")
@@ -779,6 +740,20 @@ class GalleryPage(BasePage):
     
     def render(self):
         st.header("Photo Gallery")
+        
+        # Check if Drive storage is available
+        if not self.session_store.storage:
+            st.error("⚠️ **Gallery Disabled**")
+            st.info("Google Drive storage is not configured. Gallery requires Drive to be set up.")
+            st.markdown("""
+            **To enable Gallery:**
+            1. Add `[google_service_account]` table to your `.streamlit/secrets.toml`
+            2. Ensure the service account has access to the 'Fieldmap' Drive folder
+            3. Restart the app
+            
+            See the About page for detailed setup instructions.
+            """)
+            return
         
         view_session = st.selectbox(
             "View Session:",
@@ -1289,14 +1264,18 @@ class AboutPage(BasePage):
                         client_secret = "<Google Web OAuth client_secret>"
                         server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
                         
-                        # IMPORTANT: Use triple double quotes, NOT triple single quotes
-                        GOOGLE_SERVICE_ACCOUNT_JSON = \"\"\"
-                        {
-                          "type": "service_account",
-                          "project_id": "your-project",
-                          ...
-                        }
-                        \"\"\"
+                        # Service account as TOML table (NOT JSON string)
+                        [google_service_account]
+                        type = "service_account"
+                        project_id = "your-project-id"
+                        private_key_id = "key-id"
+                        private_key = "-----BEGIN PRIVATE KEY-----\\nYOUR_KEY\\n-----END PRIVATE KEY-----\\n"
+                        client_email = "your-sa@your-project.iam.gserviceaccount.com"
+                        client_id = "123456789"
+                        auth_uri = "https://accounts.google.com/o/oauth2/auth"
+                        token_uri = "https://oauth2.googleapis.com/token"
+                        auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+                        client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
                         ```
                         
                         **To generate cookie_secret:**
@@ -1445,14 +1424,15 @@ class App:
                     logger.info("✓ Successfully connected to Google Drive API")
                 except Exception as e:
                     logger.error(f"✗ Failed to connect to Google Drive API: {e}", exc_info=True)
-                    st.warning(f"⚠️ Could not connect to Google Drive API: {str(e)}")
+                    logger.warning("⚠️ Gallery will be disabled - Drive connection failed")
+                    storage_backend = None
             except Exception as e:
                 logger.error(f"✗ Failed to initialize Google Drive storage: {e}", exc_info=True)
-                st.error(f"⚠️ Could not initialize Google Drive storage: {str(e)}")
-                st.info("Check that GOOGLE_SERVICE_ACCOUNT_JSON is properly configured in secrets.toml")
+                logger.warning("⚠️ Gallery will be disabled - storage initialization failed")
+                storage_backend = None
         else:
-            logger.warning("⚠️ Service account not configured - storage backend will be unavailable")
-            st.warning("⚠️ Google Drive storage not configured. Photos will not be saved to cloud.")
+            logger.warning("⚠️ Service account not configured - Gallery will be disabled")
+            logger.info("To enable Gallery, add [google_service_account] to secrets.toml")
         
         self.session_store = SessionStore(storage_backend=storage_backend)
         self.pages = {

@@ -57,20 +57,20 @@ def validate_secrets():
                 print(f"  ✓ [auth].{field} is set")
     
     # Validate service account
-    if 'GOOGLE_SERVICE_ACCOUNT_JSON' not in secrets:
-        print("❌ ERROR: GOOGLE_SERVICE_ACCOUNT_JSON missing")
-        issues.append("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if 'google_service_account' not in secrets:
+        print("❌ ERROR: [google_service_account] section missing")
+        issues.append("[google_service_account] section")
     else:
-        print("✓ GOOGLE_SERVICE_ACCOUNT_JSON present")
+        print("✓ [google_service_account] section present")
         
-        sa_json = secrets['GOOGLE_SERVICE_ACCOUNT_JSON']
-        try:
-            if isinstance(sa_json, str):
-                sa_data = json.loads(sa_json)
-            else:
-                sa_data = sa_json
-            
-            print("  ✓ Service account JSON is valid")
+        sa_data = secrets['google_service_account']
+        
+        # Validate it's a dict/table
+        if not isinstance(sa_data, dict):
+            print(f"  ❌ Service account should be a TOML table, got: {type(sa_data)}")
+            issues.append("Service account format (should be TOML table)")
+        else:
+            print("  ✓ Service account is a TOML table")
             
             required_sa_fields = ['type', 'project_id', 'private_key', 'client_email']
             for field in required_sa_fields:
@@ -79,9 +79,6 @@ def validate_secrets():
                     issues.append(f"Service account: {field}")
                 else:
                     print(f"    ✓ {field} present")
-        except json.JSONDecodeError as e:
-            print(f"  ❌ Invalid JSON: {e}")
-            issues.append("Service account JSON format")
     
     # Summary
     print("\n" + "="*60)
