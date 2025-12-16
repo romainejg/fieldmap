@@ -11,6 +11,7 @@ from PIL import Image
 import io
 import base64
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 import numpy as np
@@ -1218,19 +1219,27 @@ class AboutPage(BasePage):
             
             # Check if credentials are configured
             client_config = self.google_auth._get_credentials_config()
-            if not client_config:
+            redirect_uri = self.google_auth._get_redirect_uri()
+            
+            # Check for missing configuration
+            if not client_config or not redirect_uri:
                 st.markdown("### Setup Required")
-                st.error("OAuth credentials not configured")
+                if not client_config:
+                    st.error("⚠️ GOOGLE_OAUTH_CLIENT_JSON not configured")
+                if not redirect_uri:
+                    st.error("⚠️ APP_BASE_URL not configured. Please set to https://fieldmap.streamlit.app")
+                
                 with st.expander("Setup Instructions"):
                     st.markdown("""
                     **Required secrets:**
                     - `GOOGLE_OAUTH_CLIENT_JSON` - OAuth client credentials (Web application type)
-                    - `APP_BASE_URL` - App URL (e.g., https://fieldmap.streamlit.app)
+                    - `APP_BASE_URL` - App base URL (e.g., `https://fieldmap.streamlit.app` - no trailing slash)
                     
                     **In Google Cloud Console, add this exact redirect URI:**
-                    - `https://fieldmap.streamlit.app/oauth2callback`
+                    - For production: `https://fieldmap.streamlit.app/oauth2callback`
+                    - For local dev: `http://localhost:8501/oauth2callback`
                     
-                    See SETUP_GUIDE.md for details.
+                    See SETUP_GUIDE.md for complete setup instructions.
                     """)
             elif self.google_auth.is_authenticated():
                 # User is authenticated
@@ -1256,6 +1265,9 @@ class AboutPage(BasePage):
                 if st.button("Sign in with Google", key="google_signin_about", type="primary", use_container_width=True):
                     auth_url = self.google_auth.get_auth_url()
                     if auth_url:
+                        # Store auth_url for fallback
+                        st.session_state["pending_auth_url"] = auth_url
+                        
                         # Use JavaScript to immediately redirect (one-step sign-in)
                         # Use json.dumps to safely escape the URL for JavaScript context
                         # Use window.top to prevent clickjacking attacks
@@ -1268,18 +1280,66 @@ class AboutPage(BasePage):
                             """,
                             height=0
                         )
+                        # Return immediately to avoid subsequent rerenders
+                        return
                     else:
-                        st.error("Failed to generate authorization URL")
+                        st.error("Failed to generate authorization URL. Check OAuth Debug Info below.")
+                
+                # Fallback link_button if pending auth URL exists (JS redirect may have failed)
+                if "pending_auth_url" in st.session_state and st.session_state["pending_auth_url"]:
+                    st.link_button(
+                        "Continue to Google",
+                        st.session_state["pending_auth_url"],
+                        type="primary",
+                        use_container_width=True
+                    )
+                    st.caption("⬆️ Click above if you weren't automatically redirected")
                 
                 # Add guidance about test users
                 st.caption("💡 **Note:** If OAuth consent screen is in Testing mode, ensure your Google account is added as a Test User in Google Cloud Console.")
                 
                 # Debug panel for OAuth troubleshooting
                 with st.expander("🔧 OAuth Debug Info", expanded=False):
+                    st.markdown("**APP_BASE_URL Configuration:**")
+                    try:
+                        app_base_url = st.secrets.get("APP_BASE_URL") or os.environ.get("APP_BASE_URL")
+                        if app_base_url:
+                            st.code(app_base_url)
+                        else:
+                            st.error("❌ APP_BASE_URL not set")
+                    except Exception:
+                        app_base_url = os.environ.get("APP_BASE_URL")
+                        if app_base_url:
+                            st.code(app_base_url)
+                        else:
+                            st.error("❌ APP_BASE_URL not set")
+                    
                     st.markdown("**Computed Redirect URI:**")
-                    redirect_uri = self.google_auth._get_redirect_uri()
-                    st.code(redirect_uri)
-                    st.caption("This must match exactly in Google Cloud Console → Authorized redirect URIs")
+                    if redirect_uri:
+                        st.code(redirect_uri)
+                        st.caption("This must match exactly in Google Cloud Console → Authorized redirect URIs")
+                    else:
+                        st.error("❌ Cannot compute redirect URI (APP_BASE_URL missing)")
+                    
+                    st.markdown("**Generated Auth URL:**")
+                    pending_auth = st.session_state.get("pending_auth_url", "(not generated yet)")
+                    if pending_auth and pending_auth != "(not generated yet)":
+                        # Truncate for security (don't show full URL with state param)
+                        truncated = pending_auth[:80] + "..." if len(pending_auth) > 80 else pending_auth
+                        st.code(truncated)
+                    else:
+                        st.text(pending_auth)
+                    
+                    st.markdown("**OAuth Client Type:**")
+                    if client_config:
+                        if "web" in client_config:
+                            st.success("✅ Web application (correct)")
+                        elif "installed" in client_config:
+                            st.error("❌ Desktop/Installed application (incorrect - use Web application)")
+                        else:
+                            st.warning("⚠️ Unknown client type")
+                    else:
+                        st.text("(not loaded)")
                     
                     st.markdown("**Current Query Parameters:**")
                     if query_params:

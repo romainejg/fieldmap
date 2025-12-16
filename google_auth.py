@@ -26,6 +26,7 @@ class GoogleAuthHelper:
         """
         Load OAuth client configuration from secrets.
         Tries st.secrets first, then environment variables.
+        Validates that the client is a Web application type.
         
         Returns:
             dict: OAuth client configuration or None if not available
@@ -44,21 +45,36 @@ class GoogleAuthHelper:
             return None
         
         try:
-            return json.loads(raw_json)
+            config = json.loads(raw_json)
+            
+            # Validate that this is a Web application OAuth client
+            # The JSON should have a "web" key, not "installed"
+            if "installed" in config:
+                st.error("⚠️ OAuth client type is 'installed' (Desktop app). Please use a 'web' application type for proper redirect flow.")
+                return None
+            
+            if "web" not in config:
+                st.warning("⚠️ OAuth client configuration doesn't have expected 'web' key. OAuth may not work correctly.")
+            
+            return config
         except json.JSONDecodeError:
             return None
     
     def _get_redirect_uri(self):
         """
-        Get the redirect URI dynamically from APP_BASE_URL or fallback to legacy config.
+        Get the redirect URI dynamically from APP_BASE_URL.
+        
+        APP_BASE_URL is REQUIRED and must be set in secrets or environment variables.
+        No localhost fallback to prevent production issues.
         
         Priority:
-        1. APP_BASE_URL from secrets (recommended for Streamlit Cloud) + /oauth2callback
-        2. GOOGLE_REDIRECT_URI from secrets (legacy, already includes path)
-        3. Environment variables
-        4. Default to localhost for local dev
+        1. APP_BASE_URL from secrets + /oauth2callback
+        2. APP_BASE_URL from environment + /oauth2callback
+        
+        Returns:
+            str: Redirect URI or None if APP_BASE_URL is not configured
         """
-        # Try APP_BASE_URL first (recommended approach)
+        # Try APP_BASE_URL from secrets first (recommended approach)
         try:
             app_base_url = st.secrets.get("APP_BASE_URL")
             if app_base_url:
@@ -75,21 +91,8 @@ class GoogleAuthHelper:
             base = app_base_url.rstrip('/')
             return f"{base}/oauth2callback"
         
-        # Try legacy GOOGLE_REDIRECT_URI from secrets (already includes full path)
-        try:
-            redirect_uri = st.secrets.get("GOOGLE_REDIRECT_URI")
-            if redirect_uri:
-                return redirect_uri
-        except Exception:
-            pass
-        
-        # Fallback to environment variable
-        redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI")
-        if redirect_uri:
-            return redirect_uri
-        
-        # Default for local development
-        return "http://localhost:8501/oauth2callback"
+        # No fallback - APP_BASE_URL is required
+        return None
     
     def _get_stored_token(self):
         """Get stored token from session_state."""
@@ -207,6 +210,9 @@ class GoogleAuthHelper:
                 return None
             
             redirect_uri = self._get_redirect_uri()
+            if not redirect_uri:
+                st.error("❌ APP_BASE_URL is not configured. Please set it in Streamlit secrets or environment variables.")
+                return None
             
             flow = Flow.from_client_config(
                 client_config,
