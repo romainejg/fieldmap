@@ -54,7 +54,7 @@ cp .streamlit/secrets.toml.template .streamlit/secrets.toml
 
 # Edit .streamlit/secrets.toml with your credentials:
 # - [auth] section with OAuth Web App credentials
-# - GOOGLE_SERVICE_ACCOUNT_JSON with service account JSON
+# - [google_service_account] table with service account fields
 
 # Run the app
 streamlit run app.py
@@ -283,7 +283,7 @@ This automated script will diagnose configuration issues and provide specific so
 
 #### "Service account not configured"
 
-Add `GOOGLE_SERVICE_ACCOUNT_JSON` to `.streamlit/secrets.toml`. See [docs/SETUP.md](docs/SETUP.md).
+Add `[google_service_account]` table to `.streamlit/secrets.toml`. See [docs/SETUP.md](docs/SETUP.md).
 
 #### "Could not connect to Google Drive"
 
