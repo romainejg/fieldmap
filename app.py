@@ -1267,10 +1267,16 @@ class AboutPage(BasePage):
                     if auth_url:
                         # Store auth_url for fallback
                         st.session_state["pending_auth_url"] = auth_url
-                        
+                        st.session_state["redirect_initiated"] = True
+                        st.rerun()
+                    else:
+                        st.error("Failed to generate authorization URL. Check OAuth Debug Info below.")
+                
+                # If redirect was just initiated, show the JavaScript redirect
+                if st.session_state.get("redirect_initiated", False):
+                    auth_url = st.session_state.get("pending_auth_url")
+                    if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
-                        # Use json.dumps to safely escape the URL for JavaScript context
-                        # Use window.top to prevent clickjacking attacks
                         safe_url = json.dumps(auth_url)
                         components.html(
                             f"""
@@ -1280,10 +1286,8 @@ class AboutPage(BasePage):
                             """,
                             height=0
                         )
-                        # Return immediately to avoid subsequent rerenders
-                        return
-                    else:
-                        st.error("Failed to generate authorization URL. Check OAuth Debug Info below.")
+                        # Clear the flag so it doesn't keep redirecting
+                        st.session_state["redirect_initiated"] = False
                 
                 # Fallback link_button if pending auth URL exists (JS redirect may have failed)
                 if "pending_auth_url" in st.session_state and st.session_state["pending_auth_url"]:
@@ -1301,18 +1305,11 @@ class AboutPage(BasePage):
                 # Debug panel for OAuth troubleshooting
                 with st.expander("🔧 OAuth Debug Info", expanded=False):
                     st.markdown("**APP_BASE_URL Configuration:**")
-                    try:
-                        app_base_url = st.secrets.get("APP_BASE_URL") or os.environ.get("APP_BASE_URL")
-                        if app_base_url:
-                            st.code(app_base_url)
-                        else:
-                            st.error("❌ APP_BASE_URL not set")
-                    except Exception:
-                        app_base_url = os.environ.get("APP_BASE_URL")
-                        if app_base_url:
-                            st.code(app_base_url)
-                        else:
-                            st.error("❌ APP_BASE_URL not set")
+                    app_base_url = self.google_auth._get_app_base_url()
+                    if app_base_url:
+                        st.code(app_base_url)
+                    else:
+                        st.error("❌ APP_BASE_URL not set")
                     
                     st.markdown("**Computed Redirect URI:**")
                     if redirect_uri:
@@ -1322,13 +1319,13 @@ class AboutPage(BasePage):
                         st.error("❌ Cannot compute redirect URI (APP_BASE_URL missing)")
                     
                     st.markdown("**Generated Auth URL:**")
-                    pending_auth = st.session_state.get("pending_auth_url", "(not generated yet)")
-                    if pending_auth and pending_auth != "(not generated yet)":
+                    pending_auth_url = st.session_state.get("pending_auth_url", "(not generated yet)")
+                    if pending_auth_url and pending_auth_url != "(not generated yet)":
                         # Truncate for security (don't show full URL with state param)
-                        truncated = pending_auth[:80] + "..." if len(pending_auth) > 80 else pending_auth
+                        truncated = pending_auth_url[:80] + "..." if len(pending_auth_url) > 80 else pending_auth_url
                         st.code(truncated)
                     else:
-                        st.text(pending_auth)
+                        st.text(pending_auth_url)
                     
                     st.markdown("**OAuth Client Type:**")
                     if client_config:

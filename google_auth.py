@@ -60,6 +60,28 @@ class GoogleAuthHelper:
         except json.JSONDecodeError:
             return None
     
+    def _get_app_base_url(self):
+        """
+        Get APP_BASE_URL from secrets or environment variables.
+        
+        Returns:
+            str: APP_BASE_URL or None if not configured
+        """
+        # Try Streamlit secrets first
+        try:
+            app_base_url = st.secrets.get("APP_BASE_URL")
+            if app_base_url:
+                return app_base_url
+        except Exception:
+            pass
+        
+        # Fallback to environment variable
+        app_base_url = os.environ.get("APP_BASE_URL")
+        if app_base_url:
+            return app_base_url
+        
+        return None
+    
     def _get_redirect_uri(self):
         """
         Get the redirect URI dynamically from APP_BASE_URL.
@@ -67,25 +89,10 @@ class GoogleAuthHelper:
         APP_BASE_URL is REQUIRED and must be set in secrets or environment variables.
         No localhost fallback to prevent production issues.
         
-        Priority:
-        1. APP_BASE_URL from secrets + /oauth2callback
-        2. APP_BASE_URL from environment + /oauth2callback
-        
         Returns:
             str: Redirect URI or None if APP_BASE_URL is not configured
         """
-        # Try APP_BASE_URL from secrets first (recommended approach)
-        try:
-            app_base_url = st.secrets.get("APP_BASE_URL")
-            if app_base_url:
-                # Remove trailing slash if present, then append /oauth2callback
-                base = app_base_url.rstrip('/')
-                return f"{base}/oauth2callback"
-        except Exception:
-            pass
-        
-        # Fallback to APP_BASE_URL from environment
-        app_base_url = os.environ.get("APP_BASE_URL")
+        app_base_url = self._get_app_base_url()
         if app_base_url:
             # Remove trailing slash if present, then append /oauth2callback
             base = app_base_url.rstrip('/')
