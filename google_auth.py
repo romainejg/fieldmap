@@ -93,14 +93,16 @@ class GoogleAuthHelper:
         APP_BASE_URL is REQUIRED and must be set in secrets or environment variables.
         No localhost fallback to prevent production issues.
         
+        For Streamlit Cloud, use the root URL to avoid "missing page" errors.
+        The OAuth callback will be handled via query parameters on the main app route.
+        
         Returns:
             str: Redirect URI or None if APP_BASE_URL is not configured
         """
         app_base_url = self._get_app_base_url()
         if app_base_url:
-            # Remove trailing slash if present, then append /oauth2callback
-            base = app_base_url.rstrip('/')
-            return f"{base}/oauth2callback"
+            # Use root URL (no /oauth2callback path) to avoid Streamlit treating it as a page
+            return app_base_url.rstrip('/')
         
         # No fallback - APP_BASE_URL is required
         return None
@@ -333,7 +335,7 @@ class GoogleAuthHelper:
                 - Locally: Add to `.streamlit/secrets.toml`:
                   ```
                   GOOGLE_OAUTH_CLIENT_JSON = '''{"web": {...}}'''
-                  GOOGLE_REDIRECT_URI = "http://localhost:8501"
+                  APP_BASE_URL = "http://localhost:8501"
                   ```
                 """)
             return

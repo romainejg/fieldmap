@@ -47,8 +47,8 @@ Fieldmap uses **Google Drive as the exclusive storage backend**. All photos are 
      - For Streamlit Cloud: `https://fieldmap.streamlit.app`
      - For local dev: `http://localhost:8501`
    - Authorized redirect URIs:
-     - For Streamlit Cloud: `https://fieldmap.streamlit.app/oauth2callback`
-     - For local dev: `http://localhost:8501/oauth2callback`
+     - For Streamlit Cloud: `https://fieldmap.streamlit.app`
+     - For local dev: `http://localhost:8501`
    - Click **CREATE**
 
 5. **Download the JSON**:
@@ -65,7 +65,7 @@ The JSON should look like:
     "token_uri": "https://oauth2.googleapis.com/token",
     "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
     "client_secret": "YOUR_CLIENT_SECRET",
-    "redirect_uris": ["https://fieldmap.streamlit.app/oauth2callback"]
+    "redirect_uris": ["https://fieldmap.streamlit.app"]
   }
 }
 ```
@@ -89,10 +89,10 @@ GitHub Secrets allow you to store sensitive data without committing it to your r
 
 **Secret 2: APP_BASE_URL**
 - Name: `APP_BASE_URL`
-- Value: `https://fieldmap.streamlit.app` (no trailing slash, no path - the redirect URI will be computed as APP_BASE_URL/oauth2callback)
+- Value: `https://fieldmap.streamlit.app` (no trailing slash, no path - this is the redirect URI)
 - Click **Add secret**
 
-> **Note:** `APP_BASE_URL` replaces the legacy `GOOGLE_REDIRECT_URI`. The app automatically appends `/oauth2callback` to create the full redirect URI.
+> **Note:** `APP_BASE_URL` is used as the redirect URI directly (no /oauth2callback path). This avoids Streamlit's "missing pages/" error.
 
 > **Note:** GitHub Secrets cannot automatically sync to Streamlit Cloud. You'll need to manually add them to Streamlit Cloud in the next step.
 
@@ -127,7 +127,7 @@ GOOGLE_OAUTH_CLIENT_JSON = '''
     "token_uri": "https://oauth2.googleapis.com/token",
     "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
     "client_secret": "YOUR_CLIENT_SECRET",
-    "redirect_uris": ["https://fieldmap.streamlit.app/oauth2callback"]
+    "redirect_uris": ["https://fieldmap.streamlit.app"]
   }
 }
 '''
@@ -139,7 +139,7 @@ APP_BASE_URL = "https://fieldmap.streamlit.app"
 - Replace the JSON content with your actual OAuth client JSON
 - Keep the triple quotes `'''` around the JSON
 - Set `APP_BASE_URL` to your actual Streamlit Cloud URL (no trailing slash)
-- The redirect URI is automatically computed as `APP_BASE_URL/oauth2callback`
+- The redirect URI is the same as APP_BASE_URL (no /oauth2callback path)
 - Ensure this matches the Authorized redirect URI in Google Cloud Console
 
 4. Click **Save**
@@ -178,7 +178,7 @@ GOOGLE_OAUTH_CLIENT_JSON = '''
     "token_uri": "https://oauth2.googleapis.com/token",
     "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
     "client_secret": "YOUR_CLIENT_SECRET",
-    "redirect_uris": ["http://localhost:8501/oauth2callback"]
+    "redirect_uris": ["http://localhost:8501"]
   }
 }
 '''
@@ -188,7 +188,7 @@ APP_BASE_URL = "http://localhost:8501"
 
 **Important:**
 - Use `http://localhost:8501` for local development (no trailing slash)
-- The redirect URI is automatically computed as `APP_BASE_URL/oauth2callback`
+- The redirect URI is the same as APP_BASE_URL (no /oauth2callback path)
 - This file is already in `.gitignore` and won't be committed
 
 ### 4.3 Run Locally
