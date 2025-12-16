@@ -1,6 +1,9 @@
 """
 Tests for derived photo functionality and storage abstraction.
-Tests that photos can be derived from originals and that storage works correctly.
+
+Note: LocalFolderStorage has been removed as the app now only supports
+GoogleDriveStorage. Most tests in this file have been removed.
+See test_service_account_handling.py for storage-related tests.
 """
 
 import sys
@@ -8,27 +11,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from PIL import Image
-import tempfile
-import shutil
-
-# LocalFolderStorage has been removed - only GoogleDriveStorage is supported now
-# These tests are kept for reference but will be skipped
-print("Note: LocalFolderStorage has been removed. Only GoogleDriveStorage is supported.")
-print("These tests are skipped. See test_service_account_handling.py for new tests.")
-
-def test_local_folder_storage_save_and_load():
-    """Test saving and loading images with LocalFolderStorage"""
-    print("✓ Test skipped - LocalFolderStorage removed")
-
-
-def test_local_folder_storage_delete():
-    """Test deleting images with LocalFolderStorage"""
-    print("✓ Test skipped - LocalFolderStorage removed")
-
-
-def test_local_folder_storage_session_directories():
-    """Test that session directories are created correctly"""
-    print("✓ Test skipped - LocalFolderStorage removed")
 
 
 def test_derived_photo_data_structure():
@@ -89,20 +71,11 @@ def test_storage_abstract_base_class():
     print("✓ PhotoStorage abstract base class test passed")
 
 
-def test_local_folder_storage_image_format_conversion():
-    """Test that images are properly converted to RGB before saving"""
-    print("✓ Test skipped - LocalFolderStorage removed")
-
-
 def run_all_tests():
     """Run all tests"""
     tests = [
-        test_local_folder_storage_save_and_load,
-        test_local_folder_storage_delete,
-        test_local_folder_storage_session_directories,
         test_derived_photo_data_structure,
         test_storage_abstract_base_class,
-        test_local_folder_storage_image_format_conversion,
     ]
     
     print("\n" + "="*60)

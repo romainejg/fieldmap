@@ -153,7 +153,11 @@ st.markdown("""
 
 
 def log_available_secret_keys():
-    """Log available secret keys for diagnostic purposes (keys only, not values)"""
+    """
+    Log available secret keys for diagnostic purposes (keys only, not values).
+    
+    Helps diagnose configuration issues by showing what secrets are available.
+    """
     try:
         available_keys = list(st.secrets.keys())
         logger.info(f"Available secret keys in st.secrets: {available_keys}")
@@ -172,8 +176,15 @@ def get_service_account_info():
     """
     Get Google service account credentials from secrets.
     
+    Expects service account to be configured as a TOML table in secrets:
+        [google_service_account]
+        type = "service_account"
+        project_id = "..."
+        ...
+    
     Returns:
-        dict: Service account info or None if not configured
+        dict: Service account info dict ready for Credentials.from_service_account_info()
+        None: If service account is not configured (gracefully returns None without crashing)
     """
     available_keys = []
     try:
