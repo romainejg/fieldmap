@@ -226,6 +226,11 @@ test_app.py
 app_old.py
 gradio_app_backup.py
 
+# Debug and diagnostic outputs
+debug_output.txt
+debug_*.log
+test_drive.py
+
 # Node.js dependencies
 node_modules/
 package-lock.json

@@ -288,18 +288,43 @@ App opens at `http://localhost:8501`
 
 ## Troubleshooting
 
-### "Service account not configured"
+**🐛 Having issues?** Use our comprehensive debugging tools!
+
+### Quick Diagnosis
+
+Run the automated debugging script to identify problems:
+
+```bash
+python debug_auth.py
+```
+
+This will check:
+- Secrets file configuration
+- Authentication settings validity
+- Service account setup
+- Google API connectivity
+- Streamlit version compatibility
+
+See [DEBUGGING.md](../DEBUGGING.md) for complete troubleshooting guide.
+
+### Common Issues
+
+#### "Service account not configured"
 
 **Solution:** Ensure `GOOGLE_SERVICE_ACCOUNT_JSON` is set in secrets with valid JSON
 
-### "Could not connect to Google Drive"
+Run: `python debug_auth.py` for detailed diagnostics
+
+#### "Could not connect to Google Drive"
 
 **Solution:**
 1. Verify Drive API is enabled in Google Cloud Console
 2. Check service account has Editor access to "Fieldmap" folder
 3. Verify service account JSON is complete and unmodified
 
-### "Sign in with Google" shows error
+Run: `python debug_auth.py` to test Drive connection
+
+#### "Sign in with Google" shows error
 
 **Solution:**
 1. Verify Streamlit version >= 1.42.0: `pip install --upgrade streamlit>=1.42.0`
@@ -307,7 +332,9 @@ App opens at `http://localhost:8501`
 3. Ensure redirect URI matches exactly in Google Cloud Console
 4. For local dev, use `http://localhost:8501/oauth2callback`
 
-### Photos not saving
+Run: `python debug_auth.py` to validate configuration
+
+#### Photos not saving
 
 **Solution:**
 1. Check service account JSON is correct
@@ -315,7 +342,9 @@ App opens at `http://localhost:8501`
 3. Confirm service account email has Editor permission on folder
 4. Check app logs for Drive API errors
 
-### "redirect_uri_mismatch" error
+Run: `python debug_auth.py` to test service account
+
+#### "redirect_uri_mismatch" error
 
 **Solution:**
 1. In Google Cloud Console → Credentials → OAuth client
@@ -323,6 +352,21 @@ App opens at `http://localhost:8501`
    - Production: `https://fieldmap.streamlit.app/oauth2callback`
    - Local: `http://localhost:8501/oauth2callback`
 3. No trailing slashes, exact match required
+
+#### Login button doesn't appear
+
+**Solution:**
+1. Ensure Streamlit >= 1.42.0
+2. Verify complete [auth] section in secrets.toml
+3. Check browser console (F12) for errors
+4. Restart the app
+
+### Debugging Resources
+
+- **Automated diagnostics:** Run `python debug_auth.py`
+- **In-app debugger:** About page → 🔍 Debug Information
+- **Complete guide:** [DEBUGGING.md](../DEBUGGING.md)
+- **Quick start:** [QUICKSTART_DEBUGGING.md](../QUICKSTART_DEBUGGING.md)
 
 ---
 

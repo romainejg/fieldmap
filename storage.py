@@ -101,6 +101,24 @@ class GoogleDriveStorage(PhotoStorage):
         self.service = build('drive', 'v3', credentials=credentials)
         return self.service
     
+    def test_connection(self):
+        """
+        Test connection to Google Drive API.
+        
+        Returns:
+            bool: True if connection successful, False otherwise
+            
+        Raises:
+            Exception: If connection fails with error details
+        """
+        try:
+            service = self._get_service()
+            # Simple API call to verify connection
+            service.files().list(pageSize=1, fields="files(id, name)").execute()
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to connect to Google Drive: {str(e)}")
+    
     def _get_or_create_folder(self, folder_name: str, parent_id: Optional[str] = None) -> str:
         """
         Get or create a folder in Google Drive.

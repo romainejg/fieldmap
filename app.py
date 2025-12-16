@@ -32,6 +32,25 @@ logger.info("="*80)
 logger.info("Fieldmap Application Starting")
 logger.info("="*80)
 
+
+def parse_service_account_json(sa_json):
+    """
+    Parse service account JSON from either string or dict format.
+    
+    Args:
+        sa_json: Service account JSON as string or dict
+        
+    Returns:
+        dict: Parsed service account data
+        
+    Raises:
+        json.JSONDecodeError: If string format is invalid JSON
+    """
+    if isinstance(sa_json, str):
+        return json.loads(sa_json)
+    return sa_json
+
+
 # Configure page for mobile optimization
 st.set_page_config(
     page_title="Fieldmap - Lab Photos",
@@ -150,12 +169,82 @@ def get_service_account_info():
         # Try to get service account JSON from secrets
         service_account_json = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
         if service_account_json:
+            logger.info("Service account JSON found in secrets")
             if isinstance(service_account_json, str):
-                return json.loads(service_account_json)
+                try:
+                    parsed = json.loads(service_account_json)
+                    logger.info(f"Service account parsed successfully. Email: {parsed.get('client_email', 'N/A')}")
+                    return parsed
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse service account JSON: {e}")
+                    return None
+            logger.info(f"Service account already parsed. Email: {service_account_json.get('client_email', 'N/A')}")
             return service_account_json
+        else:
+            logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON not found in secrets")
     except Exception as e:
-        logger.error(f"Failed to load service account info: {e}")
+        logger.error(f"Failed to load service account info: {e}", exc_info=True)
     return None
+
+
+def check_auth_configuration():
+    """
+    Check if authentication is properly configured.
+    
+    Returns:
+        tuple: (is_configured, issues_list)
+    """
+    issues = []
+    
+    logger.info("Checking authentication configuration...")
+    
+    # Check for [auth] section
+    try:
+        if "auth" not in st.secrets:
+            issues.append("[auth] section missing in secrets.toml")
+            logger.error("[auth] section not found in secrets")
+        else:
+            auth_config = st.secrets["auth"]
+            logger.info("[auth] section found in secrets")
+            
+            # Check required fields
+            required_fields = ['client_id', 'client_secret', 'redirect_uri', 'cookie_secret', 'server_metadata_url']
+            for field in required_fields:
+                if field not in auth_config or not auth_config.get(field):
+                    issues.append(f"[auth].{field} is missing or empty")
+                    logger.error(f"[auth].{field} is missing or empty")
+                else:
+                    logger.info(f"[auth].{field} is configured")
+                    
+                    # Log partial values for verification (not full secrets)
+                    if field == 'redirect_uri':
+                        logger.info(f"  redirect_uri: {auth_config[field]}")
+                    elif field == 'client_id':
+                        logger.info(f"  client_id: {auth_config[field][:30]}...")
+                    elif field == 'cookie_secret':
+                        logger.info(f"  cookie_secret length: {len(auth_config[field])} chars")
+    except Exception as e:
+        issues.append(f"Error accessing secrets: {str(e)}")
+        logger.error(f"Error accessing secrets: {e}", exc_info=True)
+    
+    # Check service account
+    service_account = get_service_account_info()
+    if not service_account:
+        issues.append("GOOGLE_SERVICE_ACCOUNT_JSON is missing or invalid")
+        logger.error("Service account configuration is missing or invalid")
+    else:
+        logger.info("Service account configuration validated")
+    
+    is_configured = len(issues) == 0
+    
+    if is_configured:
+        logger.info("✓ All authentication configuration checks passed")
+    else:
+        logger.error(f"✗ Found {len(issues)} configuration issue(s):")
+        for issue in issues:
+            logger.error(f"  - {issue}")
+    
+    return is_configured, issues
 
 
 class SessionStore:
@@ -1075,23 +1164,36 @@ class AboutPage(BasePage):
             # user info is available via st.experimental_user (or st.user in newer versions)
             user_authenticated = False
             user_email = None
+            auth_method = None
             
             # Try to get user info from Streamlit's native auth
             try:
                 # Streamlit 1.42+ provides st.experimental_user when auth is configured
                 if hasattr(st, 'experimental_user'):
                     user_info = st.experimental_user
+                    logger.info(f"st.experimental_user exists: {user_info}")
                     if user_info and user_info.get('email'):
                         user_authenticated = True
                         user_email = user_info.get('email')
+                        auth_method = "st.experimental_user"
+                        logger.info(f"User authenticated via st.experimental_user: {user_email}")
+                    else:
+                        logger.info("st.experimental_user exists but no email found")
                 elif hasattr(st, 'user'):
                     # Newer versions use st.user
                     user_info = st.user
+                    logger.info(f"st.user exists: {user_info}")
                     if user_info and user_info.get('email'):
                         user_authenticated = True
                         user_email = user_info.get('email')
-            except Exception:
-                pass
+                        auth_method = "st.user"
+                        logger.info(f"User authenticated via st.user: {user_email}")
+                    else:
+                        logger.info("st.user exists but no email found")
+                else:
+                    logger.warning("Neither st.experimental_user nor st.user available")
+            except Exception as e:
+                logger.error(f"Error checking Streamlit auth: {e}", exc_info=True)
             
             # Fallback: check manual session state for compatibility
             if not user_authenticated:
@@ -1099,6 +1201,10 @@ class AboutPage(BasePage):
                 if user_authenticated:
                     user_info = st.session_state.get("user_info", {})
                     user_email = user_info.get("email", "Unknown")
+                    auth_method = "manual_session_state"
+                    logger.info(f"User authenticated via manual session state: {user_email}")
+                else:
+                    logger.info("User not authenticated via any method")
             
             if user_authenticated:
                 # User is authenticated
@@ -1120,24 +1226,18 @@ class AboutPage(BasePage):
                 st.markdown("### Sign In")
                 st.markdown("Sign in with Google to access Fieldmap")
                 
-                # Check if auth is configured
-                auth_configured = False
-                try:
-                    if "auth" in st.secrets and st.secrets["auth"].get("client_id"):
-                        auth_configured = True
-                except Exception:
-                    pass
+                # Run configuration check
+                auth_configured, config_issues = check_auth_configuration()
                 
-                # Check if service account is configured
-                service_account_info = get_service_account_info()
-                
-                if not auth_configured or not service_account_info:
-                    if not auth_configured:
-                        st.error("⚠️ Authentication not configured. Please configure [auth] section in secrets.")
-                    if not service_account_info:
-                        st.error("⚠️ Service account not configured. Please configure GOOGLE_SERVICE_ACCOUNT_JSON in secrets.")
+                if not auth_configured:
+                    st.error("⚠️ **Authentication Configuration Issues Detected**")
+                    st.markdown("**Issues found:**")
+                    for issue in config_issues:
+                        st.markdown(f"- {issue}")
                     
-                    with st.expander("Setup Instructions"):
+                    st.divider()
+                    
+                    with st.expander("📋 Detailed Setup Instructions", expanded=True):
                         st.markdown("""
                         **Required secrets in `.streamlit/secrets.toml`:**
                         
@@ -1158,29 +1258,119 @@ class AboutPage(BasePage):
                         '''
                         ```
                         
-                        See docs/SETUP.md for complete setup instructions.
+                        **To generate cookie_secret:**
+                        ```bash
+                        python -c "import secrets; print(secrets.token_urlsafe(32))"
+                        ```
+                        
+                        See [docs/SETUP.md](https://github.com/romainejg/fieldmap/blob/main/docs/SETUP.md) for complete setup instructions.
+                        """)
+                    
+                    with st.expander("🔧 Debugging Tools"):
+                        st.markdown("""
+                        **Run the debugging script:**
+                        
+                        ```bash
+                        python debug_auth.py
+                        ```
+                        
+                        This script will:
+                        - Validate your secrets.toml configuration
+                        - Check Streamlit version compatibility
+                        - Test Google Drive service account connection
+                        - Verify OAuth endpoint accessibility
+                        - Provide detailed diagnostic information
+                        
+                        **Common Issues:**
+                        
+                        1. **Missing secrets.toml**: Copy from template
+                           ```bash
+                           cp .streamlit/secrets.toml.template .streamlit/secrets.toml
+                           ```
+                        
+                        2. **Placeholder values**: Replace all `<...>` placeholders with actual values
+                        
+                        3. **Wrong redirect_uri**: Must match exactly in Google Cloud Console OAuth settings
+                           - Local: `http://localhost:8501/oauth2callback`
+                           - Production: `https://fieldmap.streamlit.app/oauth2callback`
+                        
+                        4. **Service account not shared**: Share "Fieldmap" Drive folder with service account email
+                        
+                        5. **Old Streamlit version**: Ensure >= 1.42.0
+                           ```bash
+                           pip install --upgrade 'streamlit>=1.42.0'
+                           ```
                         """)
                 else:
-                    # Both auth and service account configured
+                    # Configuration is valid
+                    st.success("✓ Configuration appears valid")
+                    
                     st.markdown("""
-                    Click below to sign in with Google. Streamlit's native authentication will handle the OAuth flow.
+                    **How to sign in:**
+                    
+                    Streamlit's native authentication should automatically add a **"Log in"** button to the UI.
+                    Look for it in the **top-right corner** of the page.
                     """)
                     
-                    st.info("""
-                    **Note:** Streamlit 1.42.0+ native authentication requires proper [auth] configuration in secrets.
-                    
-                    When configured correctly, Streamlit automatically adds a "Log in" button in the UI.
-                    Look for it in the top-right corner or sidebar.
-                    
-                    If you don't see the login button:
-                    1. Ensure Streamlit >= 1.42.0
-                    2. Verify [auth] section in secrets.toml is complete
-                    3. Restart the app
-                    """)
+                    # Show debugging info in expander
+                    with st.expander("🔍 Debug Information"):
+                        import streamlit as st_module
+                        st.markdown(f"**Streamlit Version:** {st_module.__version__}")
+                        
+                        st.markdown("**Authentication Attributes:**")
+                        st.markdown(f"- `hasattr(st, 'experimental_user')`: {hasattr(st, 'experimental_user')}")
+                        st.markdown(f"- `hasattr(st, 'user')`: {hasattr(st, 'user')}")
+                        
+                        if hasattr(st, 'experimental_user'):
+                            try:
+                                user_info = st.experimental_user
+                                st.markdown(f"- `st.experimental_user`: {user_info}")
+                            except Exception as e:
+                                st.markdown(f"- `st.experimental_user` error: {e}")
+                        
+                        if hasattr(st, 'user'):
+                            try:
+                                user_info = st.user
+                                st.markdown(f"- `st.user`: {user_info}")
+                            except Exception as e:
+                                st.markdown(f"- `st.user` error: {e}")
+                        
+                        st.markdown("**Secrets Check:**")
+                        try:
+                            auth_present = "auth" in st.secrets
+                            st.markdown(f"- `'auth' in st.secrets`: {auth_present}")
+                            if auth_present:
+                                st.markdown(f"- `client_id present`: {bool(st.secrets['auth'].get('client_id'))}")
+                                st.markdown(f"- `client_secret present`: {bool(st.secrets['auth'].get('client_secret'))}")
+                                st.markdown(f"- `redirect_uri`: {st.secrets['auth'].get('redirect_uri', 'N/A')}")
+                        except Exception as e:
+                            st.markdown(f"- Error checking secrets: {e}")
+                        
+                        st.markdown("**Service Account:**")
+                        service_account_info = get_service_account_info()
+                        if service_account_info:
+                            st.markdown(f"- Service account email: {service_account_info.get('client_email', 'N/A')}")
+                            st.markdown(f"- Project ID: {service_account_info.get('project_id', 'N/A')}")
+                        else:
+                            st.markdown("- Service account: Not configured")
+                        
+                        st.divider()
+                        st.markdown("""
+                        **Troubleshooting Steps:**
+                        
+                        1. Run the diagnostic script: `python debug_auth.py`
+                        2. Check browser console (F12) for JavaScript errors
+                        3. Verify redirect_uri in Google Cloud Console matches exactly
+                        4. Clear browser cookies and cache
+                        5. Try in incognito/private browsing mode
+                        6. Check that OAuth consent screen is configured in Google Cloud
+                        7. Ensure you're added as a test user (if app is in testing mode)
+                        """)
                     
                     # Provide manual fallback for testing/development
+                    st.divider()
                     if st.button("Manual Login (Dev Only)", key="manual_signin_btn", type="secondary", use_container_width=True):
-                        st.warning("This is a development-only manual login. In production, use Streamlit's native auth.")
+                        st.warning("⚠️ This is a development-only manual login. In production, use Streamlit's native auth.")
                         # Simulate login for development
                         st.session_state["logged_in"] = True
                         st.session_state["user_info"] = {"email": "test@example.com"}
@@ -1204,17 +1394,32 @@ class App:
     """Main application class that orchestrates the UI and routing"""
     
     def __init__(self):
+        logger.info("Initializing Fieldmap application")
+        
         # Initialize storage backend with service account
         storage_backend = None
         service_account_info = get_service_account_info()
         
         if service_account_info:
             try:
+                logger.info("Attempting to initialize Google Drive storage...")
                 storage_backend = GoogleDriveStorage(service_account_info)
-                logger.info("Google Drive storage (service account) initialized successfully")
+                logger.info("✓ Google Drive storage (service account) initialized successfully")
+                
+                # Test connection using public method
+                try:
+                    storage_backend.test_connection()
+                    logger.info("✓ Successfully connected to Google Drive API")
+                except Exception as e:
+                    logger.error(f"✗ Failed to connect to Google Drive API: {e}", exc_info=True)
+                    st.warning(f"⚠️ Could not connect to Google Drive API: {str(e)}")
             except Exception as e:
-                logger.error(f"Failed to initialize Google Drive storage: {e}")
-                st.warning(f"⚠️ Could not connect to Google Drive: {str(e)}")
+                logger.error(f"✗ Failed to initialize Google Drive storage: {e}", exc_info=True)
+                st.error(f"⚠️ Could not initialize Google Drive storage: {str(e)}")
+                st.info("Check that GOOGLE_SERVICE_ACCOUNT_JSON is properly configured in secrets.toml")
+        else:
+            logger.warning("⚠️ Service account not configured - storage backend will be unavailable")
+            st.warning("⚠️ Google Drive storage not configured. Photos will not be saved to cloud.")
         
         self.session_store = SessionStore(storage_backend=storage_backend)
         self.pages = {
@@ -1222,6 +1427,7 @@ class App:
             'Gallery': GalleryPage(self.session_store),
             'About': AboutPage(self.session_store)
         }
+        logger.info("✓ Application initialization complete")
     
     def render_sidebar(self):
         """Render sidebar with logo and navigation"""

@@ -260,29 +260,49 @@ streamlit run app.py --server.port 80 --server.headless true
 
 ## 🐛 Troubleshooting
 
-### "Service account not configured"
+**Having signin issues?** See our comprehensive [DEBUGGING.md](DEBUGGING.md) guide or run:
+
+```bash
+python debug_auth.py
+```
+
+This automated script will diagnose configuration issues and provide specific solutions.
+
+### Quick Fixes
+
+#### "Service account not configured"
 
 Add `GOOGLE_SERVICE_ACCOUNT_JSON` to `.streamlit/secrets.toml`. See [docs/SETUP.md](docs/SETUP.md).
 
-### "Could not connect to Google Drive"
+#### "Could not connect to Google Drive"
 
 1. Verify Drive API is enabled in Google Cloud Console
 2. Check service account has Editor access to "Fieldmap" folder
 3. Ensure service account JSON is complete and valid
 
-### "Module not found" errors
+Run `python debug_auth.py` for detailed diagnostics.
+
+#### "Login button doesn't appear"
+
+1. Ensure Streamlit >= 1.42.0: `pip install --upgrade streamlit>=1.42.0`
+2. Verify [auth] section in `.streamlit/secrets.toml` is complete
+3. Check redirect_uri matches exactly in Google Cloud Console
+4. Restart the app
+
+See [DEBUGGING.md](DEBUGGING.md) for step-by-step troubleshooting.
+
+#### "Module not found" errors
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Streamlit version issues
+### Debugging Tools
 
-Ensure Streamlit >= 1.42.0:
-
-```bash
-pip install --upgrade streamlit>=1.42.0
-```
+1. **Automated diagnostics:** `python debug_auth.py`
+2. **In-app debugger:** Go to About page → 🔍 Debug Information
+3. **Detailed guide:** [DEBUGGING.md](DEBUGGING.md)
+4. **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
 
 ## 🤝 Contributing
 
