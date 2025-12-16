@@ -1390,16 +1390,16 @@ class App:
                 if google_oauth.handle_callback():
                     st.session_state.google_authed = True
                     st.session_state.google_user_email = google_oauth.get_user_email()
-                    # Clear query params
+                    # Clear ALL query params (including oauth_state, code, state)
                     st.query_params.clear()
                     st.success("✅ Successfully signed in!")
                     st.rerun()
                 else:
                     # Error message already shown by handle_callback()
+                    # Clear ALL query params on failure too
                     st.query_params.clear()
-                    # Clean up any OAuth state
-                    if "oauth_state" in st.session_state:
-                        del st.session_state["oauth_state"]
+                    # Clean up any OAuth state using helper function
+                    google_oauth.clear_auth_state()
             st.stop()
         
         # Check authentication status

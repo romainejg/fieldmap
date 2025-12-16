@@ -89,14 +89,40 @@ def get_redirect_uri() -> Optional[str]:
     return get_app_base_url()
 
 
+def clear_auth_state():
+    """
+    Clear all OAuth-related state from session_state.
+    Helper function to eliminate duplication.
+    
+    Note: This only clears session_state. Query params (including oauth_state)
+    must be cleared separately by the caller using st.query_params.clear()
+    """
+    keys_to_clear = ["oauth_state", "auth_in_progress", "pending_auth_url"]
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    logger.debug("Cleared auth state from session_state")
+
+
 def build_auth_url() -> Optional[str]:
     """
     Generate OAuth authorization URL with state and nonce.
     Uses Authlib OAuth2Session.
+    Persists oauth_state in both session_state AND query params for reliability.
     
     Returns:
         Authorization URL or None if config not available
     """
+    # Check if auth is already in progress to avoid overwriting state
+    if st.session_state.get("auth_in_progress", False):
+        logger.warning("Auth already in progress, not generating new state")
+        # Return existing auth_url if available
+        existing_url = st.session_state.get("pending_auth_url")
+        if existing_url:
+            return existing_url
+        # If no existing URL but auth in progress, clear the flag and continue
+        st.session_state["auth_in_progress"] = False
+    
     config = get_oauth_config()
     redirect_uri = get_redirect_uri()
     
@@ -123,6 +149,14 @@ def build_auth_url() -> Optional[str]:
         # Store state in session_state for verification
         st.session_state["oauth_state"] = state
         
+        # ALSO persist oauth_state in query params before redirect
+        # This ensures state survives the redirect roundtrip
+        st.query_params["oauth_state"] = state
+        
+        # Set auth_in_progress flag to prevent state overwrite on reruns
+        st.session_state["auth_in_progress"] = True
+        st.session_state["pending_auth_url"] = auth_url
+        
         logger.info(f"Generated auth URL with state: {state[:8]}...")
         return auth_url
         
@@ -136,6 +170,7 @@ def handle_callback() -> bool:
     """
     Handle OAuth callback when user returns from Google.
     Verifies state, exchanges code for token, and stores in session_state.
+    Retrieves expected_state from query params OR session_state for reliability.
     
     Returns:
         True if authentication successful, False otherwise
@@ -150,13 +185,19 @@ def handle_callback() -> bool:
     code = query_params["code"]
     returned_state = query_params.get("state")
     
-    # Verify state
-    expected_state = st.session_state.get("oauth_state")
+    # Verify state - try query params first (more reliable), then session_state
+    expected_state = query_params.get("oauth_state") or st.session_state.get("oauth_state")
     
     if not expected_state:
         st.error("❌ Auth session expired. Please click Sign in again.")
-        logger.error("No oauth_state in session_state")
+        logger.error("No oauth_state in query params or session_state")
         return False
+    
+    # Log which source provided the state for debugging
+    if query_params.get("oauth_state"):
+        logger.info(f"Retrieved expected_state from query_params: {expected_state[:8]}...")
+    else:
+        logger.info(f"Retrieved expected_state from session_state: {expected_state[:8]}...")
     
     if returned_state != expected_state:
         st.error("❌ Auth session expired. Please click Sign in again.")
@@ -190,9 +231,8 @@ def handle_callback() -> bool:
         # Store token in session_state
         st.session_state["google_token"] = token
         
-        # Clean up OAuth state
-        if "oauth_state" in st.session_state:
-            del st.session_state["oauth_state"]
+        # Clean up OAuth state using helper function
+        clear_auth_state()
         
         # Save token to Google Drive for persistence
         # Note: This is best-effort; if it fails, user will need to re-auth next session
@@ -345,12 +385,14 @@ def get_access_token() -> Optional[str]:
 
 def sign_out():
     """
-    Sign out by removing stored token.
+    Sign out by removing stored token and clearing auth state.
     """
     if "google_token" in st.session_state:
         del st.session_state["google_token"]
-    if "oauth_state" in st.session_state:
-        del st.session_state["oauth_state"]
+    
+    # Clear all auth state using helper function
+    clear_auth_state()
+    
     logger.info("User signed out")
 
 
