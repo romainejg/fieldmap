@@ -2,10 +2,21 @@
 
 Complete setup instructions for Fieldmap using Streamlit-native OAuth/OIDC authentication and Google Drive service account storage.
 
+## Important: How Streamlit Native Auth Works
+
+When you configure the `[auth]` section in `.streamlit/secrets.toml` with an OIDC provider (like Google), **Streamlit automatically handles authentication** without needing explicit `st.login()` calls in your code:
+
+1. Streamlit adds a built-in **"Log in"** button to the UI (usually top-right corner)
+2. When a user clicks it, Streamlit manages the entire OAuth/OIDC flow
+3. After authentication, user info becomes available via `st.experimental_user` or `st.user`
+4. The app code checks this to gate content (show About page only until logged in)
+
+**You don't write OAuth code** - Streamlit handles it all when `[auth]` is configured!
+
 ## Overview
 
 Fieldmap uses:
-- **Streamlit native authentication** (`st.login()`, `st.logout()`, `st.user`) for user identity via Google OIDC
+- **Streamlit native authentication** (via `[auth]` config) for user identity via Google OIDC
 - **Google service account** for Drive storage (no second user OAuth flow)
 - **One shared "Fieldmap" folder** in Google Drive for all photo storage
 
@@ -14,6 +25,7 @@ This architecture:
 - ✅ Simplifies token management
 - ✅ Uses server-to-server authentication for Drive
 - ✅ Provides clean user identity via Streamlit
+- ✅ No custom OAuth code needed
 
 ---
 
@@ -202,18 +214,33 @@ App opens at `http://localhost:8501`
 
 ## Part 4: Using the App
 
-### 4.1 Sign In
+### 4.1 What You'll See When Launching
 
-1. Open the app
-2. You'll see the About page
-3. Click **"Sign in with Google"**
-4. Streamlit's native OAuth flow starts
-5. Sign in with your Google account
-6. Grant permissions (only identity scopes, no Drive)
-7. Redirected back to app
-8. Navigation unlocks (Fieldmap and Gallery)
+**When [auth] is configured in secrets.toml:**
 
-### 4.2 Take Photos
+1. Open the app at `http://localhost:8501` (local) or `https://fieldmap.streamlit.app` (cloud)
+2. **Streamlit adds a "Log in" button** automatically in the top-right corner or sidebar
+3. You'll see the About page (only page accessible before login)
+4. The sidebar shows: "Please sign in on the About page to access Fieldmap and Gallery"
+
+**If auth is NOT configured:**
+- The About page shows setup instructions
+- A "Manual Login (Dev Only)" button appears for testing without full auth setup
+
+### 4.2 Sign In Process
+
+1. Click Streamlit's **"Log in"** button (added automatically by Streamlit when [auth] is configured)
+2. Streamlit's native OAuth/OIDC flow initiates (no custom code!)
+3. Google's sign-in page opens in a popup or redirect
+4. Sign in with your Google account
+5. Grant permissions (only identity scopes: openid, email, profile - no Drive access)
+6. Redirected back to app automatically
+7. Your email displays in the About page: "Signed in as your@email.com"
+8. Navigation unlocks - Fieldmap and Gallery pages become accessible
+
+**Note:** You never see a second Drive authorization. Drive access happens via the service account in the background.
+
+### 4.3 Take Photos
 
 1. Navigate to **Fieldmap** page
 2. Select or create a session
@@ -222,7 +249,7 @@ App opens at `http://localhost:8501`
 5. Add notes/comments
 6. Annotate photos (creates new copy)
 
-### 4.3 Organize Photos
+### 4.4 Organize Photos
 
 1. Navigate to **Gallery** page
 2. Drag photos between sessions
