@@ -1398,13 +1398,8 @@ class App:
                     # Error message already shown by handle_callback()
                     # Clear ALL query params on failure too
                     st.query_params.clear()
-                    # Clean up any OAuth state
-                    if "oauth_state" in st.session_state:
-                        del st.session_state["oauth_state"]
-                    if "auth_in_progress" in st.session_state:
-                        del st.session_state["auth_in_progress"]
-                    if "pending_auth_url" in st.session_state:
-                        del st.session_state["pending_auth_url"]
+                    # Clean up any OAuth state using helper function
+                    google_oauth.clear_auth_state()
             st.stop()
         
         # Check authentication status

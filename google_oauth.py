@@ -89,6 +89,18 @@ def get_redirect_uri() -> Optional[str]:
     return get_app_base_url()
 
 
+def clear_auth_state():
+    """
+    Clear all OAuth-related state from session_state.
+    Helper function to eliminate duplication.
+    """
+    keys_to_clear = ["oauth_state", "auth_in_progress", "pending_auth_url"]
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    logger.debug("Cleared auth state from session_state")
+
+
 def build_auth_url() -> Optional[str]:
     """
     Generate OAuth authorization URL with state and nonce.
@@ -178,6 +190,12 @@ def handle_callback() -> bool:
         logger.error("No oauth_state in query params or session_state")
         return False
     
+    # Log which source provided the state for debugging
+    if query_params.get("oauth_state"):
+        logger.info(f"Retrieved expected_state from query_params: {expected_state[:8]}...")
+    else:
+        logger.info(f"Retrieved expected_state from session_state: {expected_state[:8]}...")
+    
     if returned_state != expected_state:
         st.error("❌ Auth session expired. Please click Sign in again.")
         logger.error(f"State mismatch: expected {expected_state[:8]}..., got {returned_state[:8] if returned_state else 'None'}...")
@@ -210,15 +228,8 @@ def handle_callback() -> bool:
         # Store token in session_state
         st.session_state["google_token"] = token
         
-        # Clean up OAuth state from session_state
-        if "oauth_state" in st.session_state:
-            del st.session_state["oauth_state"]
-        
-        # Clear auth_in_progress flag after successful authentication
-        if "auth_in_progress" in st.session_state:
-            del st.session_state["auth_in_progress"]
-        if "pending_auth_url" in st.session_state:
-            del st.session_state["pending_auth_url"]
+        # Clean up OAuth state using helper function
+        clear_auth_state()
         
         # Save token to Google Drive for persistence
         # Note: This is best-effort; if it fails, user will need to re-auth next session
@@ -375,12 +386,10 @@ def sign_out():
     """
     if "google_token" in st.session_state:
         del st.session_state["google_token"]
-    if "oauth_state" in st.session_state:
-        del st.session_state["oauth_state"]
-    if "auth_in_progress" in st.session_state:
-        del st.session_state["auth_in_progress"]
-    if "pending_auth_url" in st.session_state:
-        del st.session_state["pending_auth_url"]
+    
+    # Clear all auth state using helper function
+    clear_auth_state()
+    
     logger.info("User signed out")
 
 

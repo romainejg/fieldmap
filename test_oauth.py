@@ -204,14 +204,15 @@ def test_callback_with_query_params():
     with patch('google_oauth.OAuth2Session') as mock_session_class:
         mock_client = MagicMock()
         mock_session_class.return_value = mock_client
+        # Explicitly set the return value for fetch_token
         mock_client.fetch_token.return_value = {
             'access_token': 'test_token',
             'refresh_token': 'test_refresh',
             'expires_in': 3600
         }
         
-        # Mock save_token_to_drive to avoid API calls
-        with patch('google_oauth.save_token_to_drive'):
+        # Mock save_token_to_drive to avoid API calls (expect it to succeed)
+        with patch('google_oauth.save_token_to_drive', return_value=True):
             result = google_oauth.handle_callback()
             
             # Should succeed because state matches
