@@ -1,59 +1,80 @@
-# OAuth Fix - Testing Guide
+# Testing Guide
 
-## Pre-Testing Setup
+This guide covers testing the Fieldmap application, including OAuth authentication, photo workflows, and integration tests.
 
-### 1. Update Google Cloud Console
+## Running Unit Tests
 
-Before testing, you MUST update your OAuth 2.0 Client ID redirect URIs:
+Fieldmap includes several test suites that can be run independently:
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Navigate to **APIs & Services** → **Credentials**
-3. Click on your OAuth 2.0 Client ID (e.g., "Fieldmap Web Client")
-4. Under **Authorized redirect URIs**, update to:
-   - **Remove**: `https://fieldmap.streamlit.app/oauth2callback`
-   - **Add**: `https://fieldmap.streamlit.app`
-   
-   For local development:
-   - **Remove**: `http://localhost:8501/oauth2callback`
-   - **Add**: `http://localhost:8501`
+### Storage Tests
+Tests for photo storage, derived photos, and Google Drive integration:
 
-5. Click **Save**
-
-### 2. Verify Streamlit Secrets (if needed)
-
-Your secrets should already be configured, but verify they match:
-
-```toml
-GOOGLE_OAUTH_CLIENT_JSON = '''
-{
-  "web": {
-    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
-    ...
-    "redirect_uris": ["https://fieldmap.streamlit.app"]
-  }
-}
-'''
-
-APP_BASE_URL = "https://fieldmap.streamlit.app"
+```bash
+python test_derived_photos.py
 ```
+
+### Integration Tests
+Tests for complete workflows (capture, annotate, organize):
+
+```bash
+python test_integration.py
+```
+
+### OAuth State Tests
+Tests for OAuth state signing and verification:
+
+```bash
+python test_google_oauth_state.py
+```
+
+### Component Tests
+Tests for the photo editor component:
+
+```bash
+python test_photo_editor_component.py
+```
+
+### Run All Tests
+
+```bash
+python test_derived_photos.py && \
+python test_integration.py && \
+python test_google_oauth_state.py && \
+python test_photo_editor_component.py
+```
+
+All tests should pass. If you encounter failures, check that you have all dependencies installed:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Manual Testing
+
+### Prerequisites
+
+Before testing, ensure you have:
+
+1. **Google Cloud Console Setup**: OAuth 2.0 Client ID configured with correct redirect URIs
+2. **Secrets Configured**: Either in Streamlit Cloud or local `.streamlit/secrets.toml`
+3. **Dependencies Installed**: Run `pip install -r requirements.txt`
+
+For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ## Testing Checklist
 
-### Test 1: Sign-In Flow
+### Test 1: Authentication Flow
 
-1. [ ] Open the app: `https://fieldmap.streamlit.app`
+1. [ ] Open the app (either `https://your-app.streamlit.app` or `http://localhost:8501`)
 2. [ ] Verify you land on the About page
 3. [ ] Verify sidebar shows "Please sign in on the About page to access Fieldmap and Gallery"
 4. [ ] Click **"Sign in with Google"** button
-5. [ ] **Expected**: Immediate redirect to Google (no delay, no waiting)
-6. [ ] **Expected**: You see both JS redirect happening AND a "Continue to Google" link immediately
-7. [ ] Complete Google OAuth consent screen
-8. [ ] **Expected**: Redirect back to `https://fieldmap.streamlit.app/?code=...&state=...`
-9. [ ] **Expected**: "Completing sign-in..." spinner appears briefly
-10. [ ] **Expected**: "✅ Successfully signed in!" message appears
-11. [ ] **Expected**: Page reloads and shows "Signed in as [your-email]"
-12. [ ] **Expected**: Sidebar now shows Fieldmap, Gallery, and About options
-13. [ ] **Expected**: NO "missing page /oauth2callback" error at any point
+5. [ ] **Expected**: Redirect to Google OAuth consent screen
+6. [ ] Complete Google OAuth consent (approve permissions)
+7. [ ] **Expected**: Redirect back to app
+8. [ ] **Expected**: "✅ Successfully signed in!" message appears
+9. [ ] **Expected**: Page shows "Signed in as [your-email]"
+10. [ ] **Expected**: Sidebar now shows Fieldmap, Gallery, and About options
 
 ### Test 2: Navigation While Authenticated
 
@@ -71,86 +92,99 @@ APP_BASE_URL = "https://fieldmap.streamlit.app"
 2. [ ] Verify "Signed out successfully" message appears
 3. [ ] Verify page shows sign-in UI again
 4. [ ] Verify sidebar only shows "About" option
-5. [ ] Verify clicking Fieldmap or Gallery in URL redirects back to About page
 
-### Test 4: Error Handling
+### Test 4: Photo Workflow
+
+1. [ ] Sign in if not already signed in
+2. [ ] Navigate to Fieldmap page
+3. [ ] Take a photo using the camera input
+4. [ ] Add a comment/description
+5. [ ] Verify photo appears in the session
+6. [ ] Click "Edit Photo" to annotate
+7. [ ] Draw some annotations (lines, shapes, text)
+8. [ ] Save the annotated photo
+9. [ ] Verify a new derived photo is created
+10. [ ] Verify original photo remains unchanged
+11. [ ] Navigate to Gallery page
+12. [ ] Verify both photos appear
+13. [ ] Verify derived photo shows "Derived from Photo #X" badge
+
+### Test 5: Gallery Organization
+
+1. [ ] In Gallery page, create a new session
+2. [ ] Drag photos between sessions
+3. [ ] Verify photos move correctly
+4. [ ] Export session to Excel
+5. [ ] Verify Excel file contains photo metadata
+
+### Test 6: Error Handling
+
+### Test 6: Error Handling
 
 1. [ ] Sign out if signed in
-2. [ ] Try to access Fieldmap directly: `https://fieldmap.streamlit.app/?current_page=Fieldmap`
+2. [ ] Try to access Fieldmap directly via URL
 3. [ ] Verify you're redirected to About page with sign-in UI
 4. [ ] Click "Sign in with Google"
 5. [ ] On Google consent screen, click "Cancel" or "Deny"
-6. [ ] Verify error is displayed appropriately
+6. [ ] Verify error is handled gracefully
 
-### Test 5: Local Development (Optional)
+### Test 7: Local Development (Optional)
 
-1. [ ] Update your `.streamlit/secrets.toml` with `APP_BASE_URL = "http://localhost:8501"`
-2. [ ] Update Google Cloud Console redirect URI to `http://localhost:8501`
-3. [ ] Run `streamlit run app.py`
-4. [ ] Repeat Test 1 steps on `http://localhost:8501`
-5. [ ] Verify OAuth flow works identically
+1. [ ] Set up local `.streamlit/secrets.toml` (see [SETUP_GUIDE.md](SETUP_GUIDE.md))
+2. [ ] Run `streamlit run app.py`
+3. [ ] Open `http://localhost:8501`
+4. [ ] Repeat authentication and photo workflow tests
+5. [ ] Verify all functionality works locally
 
-## Expected Improvements
-
-### Before This Fix
-
-- ❌ After Google login: "You have requested page /oauth2callback, but no corresponding file was found in the app's pages/ directory."
-- ❌ ~1 minute delay before "Continue to Google" link appears
-- ❌ Token exchange might not complete properly
-
-### After This Fix
-
-- ✅ After Google login: Smooth redirect back to app with immediate token exchange
-- ✅ Immediate redirect to Google (no delay)
-- ✅ Token exchange completes automatically
-- ✅ Clean user experience with no errors
+## Troubleshooting
 
 ## Troubleshooting
 
 ### Issue: "redirect_uri_mismatch" error
 
-**Solution**: Verify your Google Cloud Console redirect URIs exactly match:
-- Production: `https://fieldmap.streamlit.app` (no /oauth2callback)
-- Local: `http://localhost:8501` (no /oauth2callback)
+**Solution**: Verify your Google Cloud Console redirect URIs exactly match your deployment URL:
+- Production: `https://your-app.streamlit.app`
+- Local: `http://localhost:8501`
 
-### Issue: Still seeing "missing page /oauth2callback" error
-
-**Solution**: You may need to clear browser cache or open in incognito mode. The old redirect URI might be cached.
-
-### Issue: Redirect takes a long time
-
-**Solution**: This is expected on first run. Streamlit may need to compile the app. Subsequent redirects should be instant.
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed configuration instructions.
 
 ### Issue: "Invalid OAuth state" error
 
-**Solution**: This is a security check. If you see this:
+**Solution**: This is a security check to prevent CSRF attacks. If you see this:
 1. Clear browser cookies for the app
-2. Try again
+2. Try the sign-in flow again
 3. Don't use the browser back button during OAuth flow
 
-## Security Verification
+### Issue: Photos not saving to Google Drive
 
-All changes have been validated with CodeQL security scanner - 0 vulnerabilities found.
+**Solution**:
+1. Verify you're signed in (check About page)
+2. Check internet connection
+3. Verify Google Drive API is enabled in Google Cloud Console
+4. Check app logs for specific errors
 
-Key security features maintained:
-- ✅ CSRF protection via state parameter validation
-- ✅ XSS prevention via json.dumps() for URL escaping
-- ✅ No credentials in code or logs
-- ✅ Secure token storage in session state
+### Issue: Tests failing
+
+**Solution**:
+1. Ensure all dependencies are installed: `pip install -r requirements.txt`
+2. Check that you're using Python 3.8 or higher
+3. For OAuth tests, ensure `OAUTH_STATE_SECRET` is set
 
 ## Support
 
-If you encounter any issues during testing:
-1. Check the OAuth Debug Info expander on the About page
+If you encounter issues during testing:
+1. Check the logs in Streamlit Cloud or terminal output
 2. Verify your Google Cloud Console configuration
-3. Check Streamlit Cloud logs for error messages
-4. Open an issue on GitHub with details
+3. Review [SETUP_GUIDE.md](SETUP_GUIDE.md) for setup details
+4. Check [GOOGLE_DRIVE_SETUP.md](GOOGLE_DRIVE_SETUP.md) for Drive-specific issues
+5. Open an issue on GitHub with error details
 
 ## Success Criteria
 
-All tests pass and:
-- ✅ No "missing page" errors
-- ✅ Immediate redirect on sign-in
-- ✅ Successful OAuth flow completion
-- ✅ User can access Fieldmap and Gallery after sign-in
-- ✅ Clean error handling
+All manual tests pass and:
+- ✅ OAuth authentication works smoothly
+- ✅ Photos can be captured and annotated
+- ✅ Derived photos are created correctly
+- ✅ Gallery drag-and-drop works
+- ✅ Excel export includes correct metadata
+- ✅ Sign-out clears authentication properly
