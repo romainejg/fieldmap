@@ -1294,6 +1294,17 @@ class AboutPage(BasePage):
                     oauth_state = st.session_state.get('oauth_state', '(not set)')
                     st.text(oauth_state)
                     
+                    st.markdown("**OAuth State in Cookie:**")
+                    try:
+                        cookie_state = self.google_auth.cookies.get('oauth_state', '(not set)')
+                        st.text(cookie_state)
+                    except Exception as e:
+                        st.text(f"(error reading cookie: {e})")
+                    
+                    st.markdown("**Auth In Progress:**")
+                    auth_in_progress = st.session_state.get('auth_in_progress', False)
+                    st.text(str(auth_in_progress))
+                    
                     st.markdown("**Last Auth Error:**")
                     last_error = st.session_state.get('last_oauth_error', '(none)')
                     st.text(last_error)
@@ -1342,13 +1353,26 @@ class App:
         }
     
     def _cleanup_oauth_state(self):
-        """Clean up OAuth-related session state keys."""
+        """Clean up OAuth-related session state keys and cookies."""
         # Note: oauth_state is cleaned up by handle_oauth_callback on success,
         # but we need to clean it up on error paths
         if 'oauth_state' in st.session_state:
             del st.session_state['oauth_state']
+        if 'auth_in_progress' in st.session_state:
+            del st.session_state['auth_in_progress']
+        if 'pending_auth_url' in st.session_state:
+            del st.session_state['pending_auth_url']
         if PENDING_AUTH_URL_KEY in st.session_state:
             del st.session_state[PENDING_AUTH_URL_KEY]
+        
+        # Clear OAuth state from cookie
+        try:
+            if hasattr(self.google_auth, 'cookies') and 'oauth_state' in self.google_auth.cookies:
+                del self.google_auth.cookies['oauth_state']
+                self.google_auth.cookies.save()
+        except (RuntimeError, KeyError, AttributeError):
+            # Ignore cookie cleanup errors during error paths - not critical
+            pass
     
     def render_sidebar(self):
         """Render sidebar with logo and navigation"""
@@ -1409,12 +1433,40 @@ class App:
         query_params = st.query_params
         
         if 'code' in query_params and 'state' in query_params:
-            # Validate state for CSRF protection
-            expected_state = st.session_state.get('oauth_state')
+            # Get expected state from cookie (preferred) or session_state (fallback)
+            expected_state, state_source = self.google_auth._get_expected_state()
             received_state = query_params['state']
             
             if not expected_state or expected_state != received_state:
-                st.error("❌ Invalid OAuth state. Possible CSRF attack detected. Please try again.")
+                # State mismatch - show debug info
+                st.error("❌ Invalid OAuth state. Possible CSRF attack detected.")
+                
+                # Debug information
+                st.warning("**Debug Information:**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.text("Returned state (first 8 chars):")
+                    st.code(received_state[:8] if received_state else "(none)")
+                with col2:
+                    st.text("Expected state (first 8 chars):")
+                    st.code(expected_state[:8] if expected_state else "(none)")
+                
+                st.text(f"State source: {state_source}")
+                try:
+                    # Check if cookie manager exists and is accessible
+                    if not hasattr(self.google_auth, 'cookies'):
+                        st.text("Cookie present: N/A (cookie manager not initialized)")
+                    else:
+                        cookie_present = 'oauth_state' in self.google_auth.cookies
+                        st.text(f"Cookie present: {cookie_present}")
+                except RuntimeError as e:
+                    st.text(f"Cookie present: N/A (runtime error: {str(e)})")
+                except Exception as e:
+                    st.text(f"Cookie present: N/A (error: {type(e).__name__})")
+                
+                st.info("Please try signing in again.")
+                
+                # Clear state and cookies
                 st.query_params.clear()
                 self._cleanup_oauth_state()
                 st.stop()
