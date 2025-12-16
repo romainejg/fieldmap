@@ -1271,14 +1271,14 @@ class AboutPage(BasePage):
                         client_secret = "<Google Web OAuth client_secret>"
                         server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
                         
-                        # IMPORTANT: Use triple double quotes ("""), NOT triple single quotes (''')
-                        GOOGLE_SERVICE_ACCOUNT_JSON = """
+                        # IMPORTANT: Use triple double quotes, NOT triple single quotes
+                        GOOGLE_SERVICE_ACCOUNT_JSON = \"\"\"
                         {
                           "type": "service_account",
                           "project_id": "your-project",
                           ...
                         }
-                        """
+                        \"\"\"
                         ```
                         
                         **To generate cookie_secret:**
