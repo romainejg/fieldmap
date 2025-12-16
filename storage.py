@@ -61,45 +61,69 @@ class PhotoStorage(ABC):
 
 class GoogleDriveStorage(PhotoStorage):
     """
-    Google Drive storage implementation using service account.
-    Stores photos in a shared Google Drive folder using server-to-server authentication.
-    No user OAuth required - uses service account credentials.
+    Google Drive storage implementation using user OAuth.
+    Stores photos in user's Google Drive using OAuth 2.0 credentials.
+    Photos are uploaded to the user's Drive, solving quota issues.
     """
     
-    def __init__(self, service_account_info: dict):
+    def __init__(self, user_credentials):
         """
-        Initialize Google Drive storage with service account.
+        Initialize Google Drive storage with user OAuth credentials.
         
         Args:
-            service_account_info: Service account credentials as dict
+            user_credentials: Google OAuth credentials object from oauth_utils
         """
-        self.service_account_info = service_account_info
+        self.credentials = user_credentials
         self.service = None
         self.folder_cache = {}  # Cache folder IDs
         self.index_cache = None  # Cache for index.json
+        self.root_folder_id = None  # Fieldmap root folder ID
     
     def _get_service(self):
-        """Get or create Google Drive service using service account."""
+        """Get or create Google Drive service using user OAuth credentials."""
         if self.service:
             return self.service
         
         try:
             from googleapiclient.discovery import build
-            from google.oauth2 import service_account
         except ImportError:
             raise ImportError(
                 "Google API libraries not installed. "
                 "Install with: pip install google-auth google-auth-httplib2 google-api-python-client"
             )
         
-        # Create credentials from service account info
-        credentials = service_account.Credentials.from_service_account_info(
-            self.service_account_info,
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
-        
-        self.service = build('drive', 'v3', credentials=credentials)
+        # Build service with user credentials
+        self.service = build('drive', 'v3', credentials=self.credentials)
         return self.service
+    
+    def _get_root_folder_id(self) -> str:
+        """
+        Get or create the root Fieldmap folder.
+        Uses DRIVE_ROOT_FOLDER_ID from secrets if provided, otherwise creates "Fieldmap" folder.
+        
+        Returns:
+            str: Folder ID of the root Fieldmap folder
+        """
+        if self.root_folder_id:
+            return self.root_folder_id
+        
+        # Check if DRIVE_ROOT_FOLDER_ID is provided in secrets
+        import streamlit as st
+        drive_root_id = None
+        try:
+            if "auth" in st.secrets and "DRIVE_ROOT_FOLDER_ID" in st.secrets["auth"]:
+                drive_root_id = st.secrets["auth"]["DRIVE_ROOT_FOLDER_ID"]
+                if drive_root_id:
+                    logger.info(f"Using provided DRIVE_ROOT_FOLDER_ID: {drive_root_id}")
+                    self.root_folder_id = drive_root_id
+                    return drive_root_id
+        except Exception as e:
+            logger.warning(f"Could not read DRIVE_ROOT_FOLDER_ID from secrets: {e}")
+        
+        # Create or find "Fieldmap" folder
+        self.root_folder_id = self._get_or_create_folder("Fieldmap", parent_id=None)
+        logger.info(f"Using Fieldmap folder: {self.root_folder_id}")
+        return self.root_folder_id
     
     def test_connection(self):
         """
@@ -185,7 +209,7 @@ class GoogleDriveStorage(PhotoStorage):
             service = self._get_service()
             
             # Get or create Fieldmap folder
-            fieldmap_folder_id = self._get_or_create_folder('Fieldmap')
+            fieldmap_folder_id = self._get_root_folder_id()
             
             # Search for index.json in Fieldmap folder
             query = f"name='index.json' and '{fieldmap_folder_id}' in parents and trashed=false"
@@ -245,7 +269,7 @@ class GoogleDriveStorage(PhotoStorage):
             service = self._get_service()
             
             # Get or create Fieldmap folder
-            fieldmap_folder_id = self._get_or_create_folder('Fieldmap')
+            fieldmap_folder_id = self._get_root_folder_id()
             
             # Convert index to JSON bytes
             index_json = json.dumps(index_data, indent=2)
@@ -292,7 +316,7 @@ class GoogleDriveStorage(PhotoStorage):
     
     def save_image(self, session_name: str, photo_id: int, pil_image: Image.Image) -> str:
         """
-        Save an image to Google Drive.
+        Save an image to Google Drive in user's account.
         
         Args:
             session_name: Name of the session
@@ -307,7 +331,7 @@ class GoogleDriveStorage(PhotoStorage):
         service = self._get_service()
         
         # Get or create Fieldmap folder
-        fieldmap_folder_id = self._get_or_create_folder('Fieldmap')
+        fieldmap_folder_id = self._get_root_folder_id()
         
         # Get or create session folder
         session_folder_id = self._get_or_create_folder(session_name, fieldmap_folder_id)
@@ -354,6 +378,7 @@ class GoogleDriveStorage(PhotoStorage):
             ).execute()
             file_id = file.get('id')
         
+        logger.info(f"Saved photo {photo_id} to user's Drive: {file_id}")
         return f"gdrive://{file_id}"
     
     def load_image(self, uri: str) -> Image.Image:
@@ -406,3 +431,65 @@ class GoogleDriveStorage(PhotoStorage):
             return True
         except Exception:
             return False
+    
+    def move_image(self, file_id: str, from_session: str, to_session: str) -> bool:
+        """
+        Move an image from one session folder to another.
+        
+        Args:
+            file_id: Google Drive file ID
+            from_session: Source session name
+            to_session: Destination session name
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            service = self._get_service()
+            fieldmap_folder_id = self._get_root_folder_id()
+            
+            # Get source and destination folder IDs
+            from_folder_id = self._get_or_create_folder(from_session, fieldmap_folder_id)
+            to_folder_id = self._get_or_create_folder(to_session, fieldmap_folder_id)
+            
+            # Remove file from old parent and add to new parent
+            file = service.files().update(
+                fileId=file_id,
+                addParents=to_folder_id,
+                removeParents=from_folder_id,
+                fields='id, parents'
+            ).execute()
+            
+            logger.info(f"Moved file {file_id} from {from_session} to {to_session}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to move file {file_id}: {e}")
+            return False
+    
+    def get_thumbnail_url(self, file_id: str) -> Optional[str]:
+        """
+        Get thumbnail URL for a Drive file.
+        
+        Args:
+            file_id: Google Drive file ID
+        
+        Returns:
+            str: Thumbnail URL
+            None: If not available
+        """
+        try:
+            service = self._get_service()
+            
+            # Get file metadata including thumbnailLink
+            file = service.files().get(
+                fileId=file_id,
+                fields='thumbnailLink, hasThumbnail'
+            ).execute()
+            
+            if file.get('hasThumbnail'):
+                return file.get('thumbnailLink')
+            
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get thumbnail for {file_id}: {e}")
+            return None
