@@ -181,6 +181,13 @@ def handle_callback() -> bool:
         if "oauth_state" in st.session_state:
             del st.session_state["oauth_state"]
         
+        # Save token to Google Drive for persistence
+        # Note: This is best-effort; if it fails, user will need to re-auth next session
+        try:
+            save_token_to_drive(token)
+        except Exception as e:
+            logger.warning(f"Could not save token to Drive (non-critical): {e}")
+        
         logger.info("Successfully obtained OAuth token")
         return True
         
@@ -265,3 +272,164 @@ def sign_out():
     if "oauth_state" in st.session_state:
         del st.session_state["oauth_state"]
     logger.info("User signed out")
+
+
+def save_token_to_drive(token: Dict[str, Any]) -> bool:
+    """
+    Save token to Google Drive for persistence across sessions.
+    Creates Fieldmap/_meta folder and stores token.json there.
+    
+    Args:
+        token: Token dictionary to save
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        from googleapiclient.discovery import build
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.http import MediaInMemoryUpload
+        import io
+        
+        # Get config to create credentials
+        config = get_oauth_config()
+        if not config:
+            logger.error("Cannot save token: OAuth config not available")
+            return False
+        
+        # Create credentials from token
+        creds = Credentials(
+            token=token.get("access_token"),
+            refresh_token=token.get("refresh_token"),
+            token_uri=GOOGLE_TOKEN_ENDPOINT,
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+            scopes=OAUTH_SCOPE.split()
+        )
+        
+        # Build Drive service
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Find or create Fieldmap folder
+        query = "name='Fieldmap' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+        
+        if files:
+            fieldmap_folder_id = files[0]['id']
+        else:
+            # Create Fieldmap folder
+            file_metadata = {
+                'name': 'Fieldmap',
+                'mimeType': 'application/vnd.google-apps.folder'
+            }
+            folder = service.files().create(body=file_metadata, fields='id').execute()
+            fieldmap_folder_id = folder.get('id')
+        
+        # Find or create _meta subfolder
+        query = f"name='_meta' and '{fieldmap_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+        
+        if files:
+            meta_folder_id = files[0]['id']
+        else:
+            # Create _meta folder
+            file_metadata = {
+                'name': '_meta',
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [fieldmap_folder_id]
+            }
+            folder = service.files().create(body=file_metadata, fields='id').execute()
+            meta_folder_id = folder.get('id')
+        
+        # Save token as JSON
+        token_json = json.dumps(token)
+        media = MediaInMemoryUpload(token_json.encode('utf-8'), mimetype='application/json')
+        
+        # Check if token.json already exists
+        query = f"name='token.json' and '{meta_folder_id}' in parents and trashed=false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+        
+        if files:
+            # Update existing file
+            file_id = files[0]['id']
+            service.files().update(fileId=file_id, media_body=media).execute()
+            logger.info("Updated token.json in Drive")
+        else:
+            # Create new file
+            file_metadata = {
+                'name': 'token.json',
+                'parents': [meta_folder_id]
+            }
+            service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            logger.info("Created token.json in Drive")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to save token to Drive: {e}")
+        return False
+
+
+def load_token_from_drive() -> Optional[Dict[str, Any]]:
+    """
+    Load token from Google Drive if it exists.
+    Note: This requires already having a token, so it's mainly useful
+    for refreshing or recovering from session state loss.
+    
+    Returns:
+        Token dictionary or None if not found or error
+    """
+    try:
+        # Check if we have a token in session to use for loading
+        token = st.session_state.get("google_token")
+        if not token:
+            logger.info("Cannot load token from Drive: no existing token to authenticate with")
+            return None
+        
+        from googleapiclient.discovery import build
+        from google.oauth2.credentials import Credentials
+        
+        # Get config to create credentials
+        config = get_oauth_config()
+        if not config:
+            logger.error("Cannot load token: OAuth config not available")
+            return None
+        
+        # Create credentials from current token
+        creds = Credentials(
+            token=token.get("access_token"),
+            refresh_token=token.get("refresh_token"),
+            token_uri=GOOGLE_TOKEN_ENDPOINT,
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+            scopes=OAUTH_SCOPE.split()
+        )
+        
+        # Build Drive service
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Find Fieldmap/_meta/token.json
+        query = "name='token.json' and trashed=false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name, parents)').execute()
+        files = results.get('files', [])
+        
+        if not files:
+            logger.info("token.json not found in Drive")
+            return None
+        
+        # Download token.json
+        file_id = files[0]['id']
+        content = service.files().get_media(fileId=file_id).execute()
+        
+        # Parse JSON
+        loaded_token = json.loads(content.decode('utf-8'))
+        logger.info("Loaded token from Drive")
+        return loaded_token
+        
+    except Exception as e:
+        logger.error(f"Failed to load token from Drive: {e}")
+        return None
+
