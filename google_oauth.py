@@ -93,6 +93,9 @@ def clear_auth_state():
     """
     Clear all OAuth-related state from session_state.
     Helper function to eliminate duplication.
+    
+    Note: This only clears session_state. Query params (including oauth_state)
+    must be cleared separately by the caller using st.query_params.clear()
     """
     keys_to_clear = ["oauth_state", "auth_in_progress", "pending_auth_url"]
     for key in keys_to_clear:
