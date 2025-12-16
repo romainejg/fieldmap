@@ -10,7 +10,6 @@ import pandas as pd
 from PIL import Image
 import io
 import base64
-import json
 import logging
 import sys
 from datetime import datetime
