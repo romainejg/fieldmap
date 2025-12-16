@@ -136,8 +136,6 @@ For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ## Troubleshooting
 
-## Troubleshooting
-
 ### Issue: "redirect_uri_mismatch" error
 
 **Solution**: Verify your Google Cloud Console redirect URIs exactly match your deployment URL:
