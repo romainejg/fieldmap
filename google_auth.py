@@ -9,6 +9,8 @@ import json
 import os
 from typing import Optional
 import io
+import secrets
+from streamlit_cookies_manager import EncryptedCookieManager
 
 
 class GoogleAuthHelper:
@@ -19,8 +21,37 @@ class GoogleAuthHelper:
         Initialize Google authentication helper.
         Credentials loaded from st.secrets or environment variables.
         Token stored in session_state and persisted to Google Drive.
+        Uses cookie-backed state storage for OAuth flow.
         """
-        pass
+        # Initialize cookie manager for OAuth state persistence
+        self.cookies = self._get_cookie_manager()
+    
+    def _get_cookie_manager(self):
+        """
+        Get or create cookie manager for OAuth state persistence.
+        
+        Returns:
+            EncryptedCookieManager instance
+        """
+        # Use a password from secrets or a default one
+        # For production, this should be in secrets
+        try:
+            password = st.secrets.get("COOKIE_PASSWORD", "fieldmap-oauth-cookie-secret-key-change-me")
+        except Exception:
+            password = os.environ.get("COOKIE_PASSWORD", "fieldmap-oauth-cookie-secret-key-change-me")
+        
+        # Create cookie manager if not already in session_state
+        if 'cookie_manager' not in st.session_state:
+            st.session_state.cookie_manager = EncryptedCookieManager(
+                prefix="fieldmap_",
+                password=password
+            )
+        
+        # Ensure cookies are ready
+        if not st.session_state.cookie_manager.ready():
+            st.stop()
+        
+        return st.session_state.cookie_manager
     
     def _get_credentials_config(self):
         """
@@ -106,6 +137,25 @@ class GoogleAuthHelper:
         
         # No fallback - APP_BASE_URL is required
         return None
+    
+    def _get_expected_state(self):
+        """
+        Get expected OAuth state from cookie (preferred) or session_state (fallback).
+        
+        Returns:
+            tuple: (state_value, source) where source is 'cookie', 'session', or 'none'
+        """
+        # Try cookie first (more reliable across redirects)
+        cookie_state = self.cookies.get('oauth_state')
+        if cookie_state:
+            return (cookie_state, 'cookie')
+        
+        # Fallback to session_state
+        session_state = st.session_state.get('oauth_state')
+        if session_state:
+            return (session_state, 'session')
+        
+        return (None, 'none')
     
     def _get_stored_token(self):
         """Get stored token from session_state."""
@@ -210,10 +260,18 @@ class GoogleAuthHelper:
     def get_auth_url(self) -> Optional[str]:
         """
         Generate OAuth authorization URL for web flow.
+        Uses cookie-backed state storage to survive redirects.
+        Prevents state regeneration on reruns.
         
         Returns:
             Authorization URL or None if config not available
         """
+        # Check if auth is already in progress - reuse existing auth_url and state
+        if st.session_state.get('auth_in_progress', False):
+            stored_auth_url = st.session_state.get('pending_auth_url')
+            if stored_auth_url:
+                return stored_auth_url
+        
         try:
             from google_auth_oauthlib.flow import Flow
             from storage import GOOGLE_DRIVE_SCOPE
@@ -233,16 +291,26 @@ class GoogleAuthHelper:
                 redirect_uri=redirect_uri
             )
             
-            # Generate auth URL with state for CSRF protection
-            auth_url, state = flow.authorization_url(
+            # Generate a secure random state token
+            state = secrets.token_urlsafe(32)
+            
+            # Build auth URL with the state
+            auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
-                prompt='consent'
+                prompt='consent',
+                state=state
             )
             
-            # Store state in session for verification
+            # Store state in BOTH cookie and session_state for redundancy
+            self.cookies['oauth_state'] = state
+            self.cookies.save()
             st.session_state.oauth_state = state
             st.session_state.oauth_flow = flow
+            
+            # Mark auth as in progress and store the URL
+            st.session_state.auth_in_progress = True
+            st.session_state.pending_auth_url = auth_url
             
             return auth_url
         except Exception as e:
@@ -281,11 +349,19 @@ class GoogleAuthHelper:
                 'scopes': creds.scopes
             })
             
-            # Clean up flow state
+            # Clean up OAuth state from both cookie and session_state
+            if 'oauth_state' in self.cookies:
+                del self.cookies['oauth_state']
+                self.cookies.save()
+            
             if 'oauth_flow' in st.session_state:
                 del st.session_state.oauth_flow
             if 'oauth_state' in st.session_state:
                 del st.session_state.oauth_state
+            if 'auth_in_progress' in st.session_state:
+                del st.session_state.auth_in_progress
+            if 'pending_auth_url' in st.session_state:
+                del st.session_state.pending_auth_url
             
             # Clear any previous errors
             if 'last_oauth_error' in st.session_state:
