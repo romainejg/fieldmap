@@ -32,7 +32,9 @@ DEFAULT_OAUTH_STATE_MAX_AGE = 300  # 5 minutes
 def get_oauth_state_secret() -> str:
     """
     Get OAuth state secret from environment or Streamlit secrets.
-    Falls back to a dev-only random secret for local development.
+    
+    In production, OAUTH_STATE_SECRET MUST be set explicitly.
+    In development, falls back to a random secret (won't work across restarts).
     
     Returns:
         Secret key string for signing OAuth state tokens
@@ -51,9 +53,13 @@ def get_oauth_state_secret() -> str:
     
     if not secret:
         # For development only: generate a random secret
-        # In production, this should always be set explicitly
+        # WARNING: This secret changes on each app restart, breaking OAuth flows
+        # For production, ALWAYS set OAUTH_STATE_SECRET explicitly
+        logger.warning("="*60)
         logger.warning("OAUTH_STATE_SECRET not set - generating dev-only random secret")
         logger.warning("For production, set OAUTH_STATE_SECRET environment variable")
+        logger.warning("Dev secret will change on restart, breaking active OAuth flows")
+        logger.warning("="*60)
         secret = secrets.token_urlsafe(32)
     
     return secret
@@ -231,8 +237,8 @@ def build_auth_url() -> Optional[str]:
         # Sign and serialize the state
         signed_state = serializer.dumps(state_payload)
         
-        logger.info(f"Generated signed OAuth state token (first 20 chars): {signed_state[:20]}...")
-        logger.info(f"State payload nonce: {state_payload['nonce'][:16]}...")
+        logger.info(f"Generated signed OAuth state token (length: {len(signed_state)} chars)")
+        logger.info(f"State payload contains nonce (masked for security)")
         
         # Create OAuth2Session with the signed state
         logger.debug("Creating OAuth2Session")
@@ -298,7 +304,7 @@ def handle_callback() -> bool:
     returned_state = query_params.get("state")
     
     logger.info(f"Code received: {code[:20]}...")
-    logger.info(f"State from Google (first 20 chars): {returned_state[:20] if returned_state else 'MISSING'}...")
+    logger.info(f"State from Google (length: {len(returned_state) if returned_state else 0} chars)")
     
     # Verify signed state token
     if not returned_state:
@@ -322,7 +328,7 @@ def handle_callback() -> bool:
         state_payload = serializer.loads(returned_state, max_age=max_age)
         
         logger.info("✓ Signed OAuth state token verified successfully!")
-        logger.info(f"State payload nonce: {state_payload.get('nonce', 'N/A')[:16]}...")
+        logger.info(f"State payload contains valid nonce (masked for security)")
         logger.info(f"Token age was within {max_age} seconds")
         
     except SignatureExpired as e:
