@@ -104,11 +104,6 @@ def test_auth_url_generation():
     assert len(state) > 20  # Should be a long random string
     print(f"✓ build_auth_url() generated state in session_state: {state[:10]}...")
     
-    # Check that state was ALSO stored in query_params
-    assert 'oauth_state' in st.query_params
-    assert st.query_params['oauth_state'] == state
-    print(f"✓ build_auth_url() also stored state in query_params")
-    
     # Check that auth_in_progress flag was set
     assert st.session_state.get('auth_in_progress') == True
     print(f"✓ build_auth_url() set auth_in_progress flag")
@@ -178,21 +173,20 @@ def test_sign_out():
     assert 'pending_auth_url' not in st.session_state
     print("✓ sign_out() clears token, state, and auth flags")
 
-def test_callback_with_query_params():
-    """Test callback handling with state in query params"""
-    print("\n=== Testing Callback with Query Params ===")
+def test_callback_with_session_state():
+    """Test callback handling with state in session_state"""
+    print("\n=== Testing Callback with Session State ===")
     
     # Set up config
     os.environ['GOOGLE_CLIENT_ID'] = 'test_client_id'
     os.environ['GOOGLE_CLIENT_SECRET'] = 'test_secret'
     os.environ['APP_BASE_URL'] = 'https://test.example.com'
     
-    # Simulate state stored in query params (but not session_state)
-    # This simulates what happens after redirect
+    # Simulate state stored in session_state (persists across redirect)
     st.session_state.clear()
     st.query_params.clear()
     test_state = 'test_oauth_state_12345'
-    st.query_params['oauth_state'] = test_state
+    st.session_state['oauth_state'] = test_state
     st.query_params['state'] = test_state
     st.query_params['code'] = 'test_auth_code'
     
@@ -217,7 +211,7 @@ def test_callback_with_query_params():
             
             # Should succeed because state matches
             assert result == True
-            print("✓ handle_callback() succeeds with state from query params")
+            print("✓ handle_callback() succeeds with state from session_state")
             
             # Check that token was stored
             assert 'google_token' in st.session_state
@@ -246,7 +240,7 @@ def main():
         test_auth_url_generation()
         test_authentication_check()
         test_sign_out()
-        test_callback_with_query_params()
+        test_callback_with_session_state()
         
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
