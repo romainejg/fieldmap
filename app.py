@@ -32,6 +32,18 @@ logger.info("="*80)
 logger.info("Fieldmap Application Starting")
 logger.info("="*80)
 
+# Diagnostic: Log available secret keys (for debugging missing GOOGLE_SERVICE_ACCOUNT_JSON)
+try:
+    available_secret_keys = list(st.secrets.keys())
+    logger.info(f"Available secret keys in st.secrets: {available_secret_keys}")
+    if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
+        logger.info("✓ GOOGLE_SERVICE_ACCOUNT_JSON is present in st.secrets")
+    else:
+        logger.error("✗ GOOGLE_SERVICE_ACCOUNT_JSON is MISSING from st.secrets")
+        logger.error(f"   Available keys: {available_secret_keys}")
+except Exception as e:
+    logger.error(f"Failed to access st.secrets during diagnostic check: {e}")
+
 
 def parse_service_account_json(sa_json):
     """
@@ -166,8 +178,26 @@ def get_service_account_info():
         dict: Service account info or None if not configured
     """
     try:
-        # Try to get service account JSON from secrets
-        service_account_json = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+        # Log available secret keys for diagnostic purposes (keys only, not values)
+        available_keys = list(st.secrets.keys())
+        logger.info(f"Available secret keys: {available_keys}")
+        
+        # Check if GOOGLE_SERVICE_ACCOUNT_JSON exists (case-sensitive, exact match)
+        if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
+            logger.info("GOOGLE_SERVICE_ACCOUNT_JSON key found in st.secrets")
+        else:
+            logger.error("GOOGLE_SERVICE_ACCOUNT_JSON key NOT found in st.secrets")
+            logger.error(f"Available keys are: {available_keys}")
+            raise KeyError(
+                f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets. "
+                f"Available secret keys: {available_keys}. "
+                f"Please ensure you have added GOOGLE_SERVICE_ACCOUNT_JSON to your secrets configuration "
+                f"in Streamlit Cloud (Settings > Secrets) or in .streamlit/secrets.toml for local development. "
+                f"The key name is case-sensitive and must be exactly 'GOOGLE_SERVICE_ACCOUNT_JSON'."
+            )
+        
+        # Try to get service account JSON from secrets (exact key match, case-sensitive)
+        service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
         if service_account_json:
             logger.info("Service account JSON found in secrets")
             if isinstance(service_account_json, str):
@@ -181,7 +211,10 @@ def get_service_account_info():
             logger.info(f"Service account already parsed. Email: {service_account_json.get('client_email', 'N/A')}")
             return service_account_json
         else:
-            logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON not found in secrets")
+            logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON is present but empty")
+    except KeyError as e:
+        # Re-raise KeyError with diagnostic information
+        raise
     except Exception as e:
         logger.error(f"Failed to load service account info: {e}", exc_info=True)
     return None
@@ -1161,26 +1194,15 @@ class AboutPage(BasePage):
             
             # Check if user is logged in using Streamlit's native auth
             # In Streamlit 1.42+, when [auth] is configured in secrets.toml,
-            # user info is available via st.experimental_user (or st.user in newer versions)
+            # user info is available via st.user
             user_authenticated = False
             user_email = None
             auth_method = None
             
             # Try to get user info from Streamlit's native auth
             try:
-                # Streamlit 1.42+ provides st.experimental_user when auth is configured
-                if hasattr(st, 'experimental_user'):
-                    user_info = st.experimental_user
-                    logger.info(f"st.experimental_user exists: {user_info}")
-                    if user_info and user_info.get('email'):
-                        user_authenticated = True
-                        user_email = user_info.get('email')
-                        auth_method = "st.experimental_user"
-                        logger.info(f"User authenticated via st.experimental_user: {user_email}")
-                    else:
-                        logger.info("st.experimental_user exists but no email found")
-                elif hasattr(st, 'user'):
-                    # Newer versions use st.user
+                # Streamlit 1.42+ provides st.user when auth is configured
+                if hasattr(st, 'user'):
                     user_info = st.user
                     logger.info(f"st.user exists: {user_info}")
                     if user_info and user_info.get('email'):
@@ -1191,7 +1213,7 @@ class AboutPage(BasePage):
                     else:
                         logger.info("st.user exists but no email found")
                 else:
-                    logger.warning("Neither st.experimental_user nor st.user available")
+                    logger.warning("st.user not available")
             except Exception as e:
                 logger.error(f"Error checking Streamlit auth: {e}", exc_info=True)
             
@@ -1249,13 +1271,14 @@ class AboutPage(BasePage):
                         client_secret = "<Google Web OAuth client_secret>"
                         server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
                         
-                        GOOGLE_SERVICE_ACCOUNT_JSON = '''
+                        # IMPORTANT: Use triple double quotes ("""), NOT triple single quotes (''')
+                        GOOGLE_SERVICE_ACCOUNT_JSON = """
                         {
                           "type": "service_account",
                           "project_id": "your-project",
                           ...
                         }
-                        '''
+                        """
                         ```
                         
                         **To generate cookie_secret:**
@@ -1318,15 +1341,7 @@ class AboutPage(BasePage):
                         st.markdown(f"**Streamlit Version:** {st_module.__version__}")
                         
                         st.markdown("**Authentication Attributes:**")
-                        st.markdown(f"- `hasattr(st, 'experimental_user')`: {hasattr(st, 'experimental_user')}")
                         st.markdown(f"- `hasattr(st, 'user')`: {hasattr(st, 'user')}")
-                        
-                        if hasattr(st, 'experimental_user'):
-                            try:
-                                user_info = st.experimental_user
-                                st.markdown(f"- `st.experimental_user`: {user_info}")
-                            except Exception as e:
-                                st.markdown(f"- `st.experimental_user` error: {e}")
                         
                         if hasattr(st, 'user'):
                             try:
@@ -1450,11 +1465,7 @@ class App:
             # Check if user is authenticated using Streamlit's native auth or fallback
             is_authenticated = False
             try:
-                if hasattr(st, 'experimental_user'):
-                    user_info = st.experimental_user
-                    if user_info and user_info.get('email'):
-                        is_authenticated = True
-                elif hasattr(st, 'user'):
+                if hasattr(st, 'user'):
                     user_info = st.user
                     if user_info and user_info.get('email'):
                         is_authenticated = True
@@ -1496,11 +1507,7 @@ class App:
         
         # Try to get user info from Streamlit's native auth
         try:
-            if hasattr(st, 'experimental_user'):
-                user_info = st.experimental_user
-                if user_info and user_info.get('email'):
-                    is_authenticated = True
-            elif hasattr(st, 'user'):
+            if hasattr(st, 'user'):
                 user_info = st.user
                 if user_info and user_info.get('email'):
                     is_authenticated = True

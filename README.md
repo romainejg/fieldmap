@@ -214,7 +214,8 @@ client_id = "<oauth-client-id>"
 client_secret = "<oauth-client-secret>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-GOOGLE_SERVICE_ACCOUNT_JSON = '''<service-account-json>'''
+# IMPORTANT: Use triple double quotes ("""), NOT triple single quotes (''')
+GOOGLE_SERVICE_ACCOUNT_JSON = """<service-account-json>"""
 ```
 
 ### Streamlit Configuration
@@ -260,7 +261,7 @@ streamlit run app.py --server.port 80 --server.headless true
 
 ## 🐛 Troubleshooting
 
-**Having signin issues?** See our comprehensive [DEBUGGING.md](DEBUGGING.md) guide or run:
+**Having signin issues?** Run the diagnostic script:
 
 ```bash
 python debug_auth.py
@@ -289,7 +290,7 @@ Run `python debug_auth.py` for detailed diagnostics.
 3. Check redirect_uri matches exactly in Google Cloud Console
 4. Restart the app
 
-See [DEBUGGING.md](DEBUGGING.md) for step-by-step troubleshooting.
+Run `python debug_auth.py` for detailed diagnostics.
 
 #### "Module not found" errors
 
@@ -300,9 +301,7 @@ pip install -r requirements.txt
 ### Debugging Tools
 
 1. **Automated diagnostics:** `python debug_auth.py`
-2. **In-app debugger:** Go to About page → 🔍 Debug Information
-3. **Detailed guide:** [DEBUGGING.md](DEBUGGING.md)
-4. **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
+2. **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
 
 ## 🤝 Contributing
 
