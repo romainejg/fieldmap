@@ -131,7 +131,8 @@ client_secret = "<YOUR_OAUTH_CLIENT_SECRET>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
 # Google Service Account for Drive Storage
-GOOGLE_SERVICE_ACCOUNT_JSON = '''
+# IMPORTANT: Use triple double quotes (""") for TOML multiline strings, NOT triple single quotes (''')
+GOOGLE_SERVICE_ACCOUNT_JSON = """
 {
   "type": "service_account",
   "project_id": "your-project-id",
@@ -144,7 +145,7 @@ GOOGLE_SERVICE_ACCOUNT_JSON = '''
   "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
   "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
 }
-'''
+"""
 ```
 
 **To generate `cookie_secret`:**
@@ -154,7 +155,8 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 **For `GOOGLE_SERVICE_ACCOUNT_JSON`:**
 - Paste the entire contents of the JSON file downloaded in Part 1.4.9
-- Keep the triple quotes `'''` around it
+- **IMPORTANT: Use triple double quotes `"""` around it, NOT triple single quotes `'''`**
+- This ensures proper TOML parsing in Streamlit Cloud
 
 3. Click **Save**
 4. App will restart automatically
@@ -189,12 +191,13 @@ client_id = "<YOUR_OAUTH_CLIENT_ID>.apps.googleusercontent.com"
 client_secret = "<YOUR_OAUTH_CLIENT_SECRET>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-GOOGLE_SERVICE_ACCOUNT_JSON = '''
+# IMPORTANT: Use triple double quotes (""") for TOML multiline strings
+GOOGLE_SERVICE_ACCOUNT_JSON = """
 {
   "type": "service_account",
   ...
 }
-'''
+"""
 ```
 
 **Important:**
@@ -305,7 +308,7 @@ This will check:
 - Google API connectivity
 - Streamlit version compatibility
 
-See [DEBUGGING.md](../DEBUGGING.md) for complete troubleshooting guide.
+See [docs/SETUP.md](SETUP.md) for complete troubleshooting guide.
 
 ### Common Issues
 
@@ -365,8 +368,7 @@ Run: `python debug_auth.py` to test service account
 
 - **Automated diagnostics:** Run `python debug_auth.py`
 - **In-app debugger:** About page → 🔍 Debug Information
-- **Complete guide:** [DEBUGGING.md](../DEBUGGING.md)
-- **Quick start:** [QUICKSTART_DEBUGGING.md](../QUICKSTART_DEBUGGING.md)
+- **Setup guide:** [SETUP.md](SETUP.md)
 
 ---
 
@@ -393,7 +395,8 @@ client_id = "<oauth-client-id>"
 client_secret = "<oauth-client-secret>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-GOOGLE_SERVICE_ACCOUNT_JSON = '''<service-account-json>'''
+# IMPORTANT: Use triple double quotes ("""), NOT triple single quotes (''')
+GOOGLE_SERVICE_ACCOUNT_JSON = """<service-account-json>"""
 ```
 
 **For Local Development:**
