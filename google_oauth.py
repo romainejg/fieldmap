@@ -29,11 +29,20 @@ def get_oauth_config() -> Optional[Dict[str, str]]:
     Returns:
         Dict with client_id and client_secret, or None if not configured
     """
+    client_id = None
+    client_secret = None
+    
+    # Try Streamlit secrets first
     try:
         client_id = st.secrets.get("GOOGLE_CLIENT_ID")
         client_secret = st.secrets.get("GOOGLE_CLIENT_SECRET")
     except Exception:
+        pass
+    
+    # Fall back to environment variables if not found in secrets
+    if not client_id:
         client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    if not client_secret:
         client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
     
     if client_id and client_secret:
@@ -51,14 +60,18 @@ def get_app_base_url() -> Optional[str]:
     Returns:
         str: APP_BASE_URL or None if not configured
     """
+    app_base_url = None
+    
+    # Try Streamlit secrets first
     try:
         app_base_url = st.secrets.get("APP_BASE_URL")
-        if app_base_url:
-            return app_base_url.rstrip('/')
     except Exception:
         pass
     
-    app_base_url = os.environ.get("APP_BASE_URL")
+    # Fall back to environment variable if not found in secrets
+    if not app_base_url:
+        app_base_url = os.environ.get("APP_BASE_URL")
+    
     if app_base_url:
         return app_base_url.rstrip('/')
     
