@@ -12,6 +12,7 @@ import io
 import base64
 import json
 import os
+import html
 from datetime import datetime
 from pathlib import Path
 import numpy as np
@@ -24,6 +25,13 @@ from storage import LocalFolderStorage, GoogleDriveStorage
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
+
+# Session state keys for OAuth flow
+PENDING_AUTH_URL_KEY = "pending_auth_url"
+REDIRECT_INITIATED_KEY = "redirect_initiated"
+
+# Constants
+MAX_URL_DISPLAY_LENGTH = 80
 
 # Configure page for mobile optimization
 st.set_page_config(
@@ -1060,6 +1068,17 @@ class AboutPage(BasePage):
         super().__init__(session_store)
         self.google_auth = google_auth_helper
     
+    def _clear_oauth_state(self):
+        """Clear all OAuth-related session state keys."""
+        keys_to_clear = [
+            'oauth_state',
+            PENDING_AUTH_URL_KEY,
+            REDIRECT_INITIATED_KEY
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+    
     def render(self):
         # Custom CSS for hero split layout
         st.markdown("""
@@ -1175,8 +1194,7 @@ class AboutPage(BasePage):
                 if not expected_state or expected_state != received_state:
                     st.error("❌ Invalid OAuth state. Possible CSRF attack detected. Please try again.")
                     st.query_params.clear()
-                    if 'oauth_state' in st.session_state:
-                        del st.session_state.oauth_state
+                    self._clear_oauth_state()
                 else:
                     # State is valid, proceed with token exchange
                     redirect_uri = self.google_auth._get_redirect_uri()
@@ -1190,21 +1208,15 @@ class AboutPage(BasePage):
                             if self.google_auth.handle_oauth_callback(auth_response_url):
                                 st.session_state.google_authed = True
                                 st.session_state.google_user_email = self.google_auth.get_user_email()
-                                # Clear query params, state, and pending auth
+                                # Clear query params and OAuth state
                                 st.query_params.clear()
-                                if 'oauth_state' in st.session_state:
-                                    del st.session_state.oauth_state
-                                if 'pending_auth_url' in st.session_state:
-                                    del st.session_state.pending_auth_url
-                                if 'redirect_initiated' in st.session_state:
-                                    del st.session_state.redirect_initiated
+                                self._clear_oauth_state()
                                 st.success("✅ Successfully signed in!")
                                 st.rerun()
                             else:
                                 st.error("❌ Authentication failed. Please check the debug info below and try again.")
                                 st.query_params.clear()
-                                if 'oauth_state' in st.session_state:
-                                    del st.session_state.oauth_state
+                                self._clear_oauth_state()
                         except Exception as e:
                             error_msg = str(e)
                             st.error(f"❌ Authentication error: {error_msg}")
@@ -1218,8 +1230,7 @@ class AboutPage(BasePage):
                                 st.warning("**Unauthorized client**: Ensure your app is published or you're added as a test user in the OAuth consent screen.")
                             
                             st.query_params.clear()
-                            if 'oauth_state' in st.session_state:
-                                del st.session_state.oauth_state
+                            self._clear_oauth_state()
             
             # Check if credentials are configured
             client_config = self.google_auth._get_credentials_config()
@@ -1270,21 +1281,22 @@ class AboutPage(BasePage):
                     auth_url = self.google_auth.get_auth_url()
                     if auth_url:
                         # Store auth_url for fallback and set flag for redirect
-                        st.session_state["pending_auth_url"] = auth_url
-                        st.session_state["redirect_initiated"] = True
+                        st.session_state[PENDING_AUTH_URL_KEY] = auth_url
+                        st.session_state[REDIRECT_INITIATED_KEY] = True
                         st.rerun()
                     else:
                         st.error("Failed to generate authorization URL. Check OAuth Debug Info below.")
                 
                 # If redirect was just initiated, show the JavaScript redirect and clear flag
-                if st.session_state.get("redirect_initiated", False):
+                if st.session_state.get(REDIRECT_INITIATED_KEY, False):
                     # Clear the flag immediately so we don't keep showing the redirect
-                    st.session_state["redirect_initiated"] = False
+                    st.session_state[REDIRECT_INITIATED_KEY] = False
                     
-                    auth_url = st.session_state.get("pending_auth_url")
+                    auth_url = st.session_state.get(PENDING_AUTH_URL_KEY)
                     if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
-                        safe_url = json.dumps(auth_url)
+                        # Use html.escape for additional defense in depth
+                        safe_url = html.escape(json.dumps(auth_url), quote=True)
                         components.html(
                             f"""
                             <script>
@@ -1297,20 +1309,20 @@ class AboutPage(BasePage):
                         st.caption("⏳ Redirecting to Google...")
                         # Don't show fallback in same render - give redirect time to work
                         
-                elif "pending_auth_url" in st.session_state and st.session_state["pending_auth_url"]:
+                elif PENDING_AUTH_URL_KEY in st.session_state and st.session_state[PENDING_AUTH_URL_KEY]:
                     # Fallback link_button shown on subsequent renders if user is still here
                     # (either JS failed, was blocked, or user clicked back from Google)
                     st.link_button(
                         "Continue to Google",
-                        st.session_state["pending_auth_url"],
+                        st.session_state[PENDING_AUTH_URL_KEY],
                         type="primary",
                         use_container_width=True
                     )
                     st.caption("⬆️ Click above if you weren't automatically redirected")
                     # Provide a way to clear and try again
                     if st.button("Try Again", key="clear_pending_auth"):
-                        if "pending_auth_url" in st.session_state:
-                            del st.session_state["pending_auth_url"]
+                        if PENDING_AUTH_URL_KEY in st.session_state:
+                            del st.session_state[PENDING_AUTH_URL_KEY]
                         st.rerun()
                 
                 # Add guidance about test users
@@ -1333,10 +1345,10 @@ class AboutPage(BasePage):
                         st.error("❌ Cannot compute redirect URI (APP_BASE_URL missing)")
                     
                     st.markdown("**Generated Auth URL:**")
-                    pending_auth_url = st.session_state.get("pending_auth_url", "(not generated yet)")
+                    pending_auth_url = st.session_state.get(PENDING_AUTH_URL_KEY, "(not generated yet)")
                     if pending_auth_url and pending_auth_url != "(not generated yet)":
                         # Truncate for security (don't show full URL with state param)
-                        truncated = pending_auth_url[:80] + "..." if len(pending_auth_url) > 80 else pending_auth_url
+                        truncated = pending_auth_url[:MAX_URL_DISPLAY_LENGTH] + "..." if len(pending_auth_url) > MAX_URL_DISPLAY_LENGTH else pending_auth_url
                         st.code(truncated)
                     else:
                         st.text(pending_auth_url)
