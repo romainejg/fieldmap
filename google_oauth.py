@@ -213,6 +213,7 @@ def handle_callback() -> bool:
 def is_authenticated() -> bool:
     """
     Check if user is authenticated with a valid token.
+    Handles token refresh if expired.
     
     Returns:
         True if authenticated, False otherwise
@@ -225,8 +226,74 @@ def is_authenticated() -> bool:
     if "access_token" not in token:
         return False
     
-    # TODO: Add token expiration check and refresh logic
+    # Check if token is expired and needs refresh
+    if "expires_at" in token:
+        import time
+        if time.time() > token["expires_at"]:
+            # Token is expired, try to refresh
+            if "refresh_token" in token:
+                if refresh_token():
+                    # Successfully refreshed
+                    return True
+                else:
+                    # Refresh failed, user needs to re-authenticate
+                    return False
+            else:
+                # No refresh token available
+                return False
+    
     return True
+
+
+def refresh_token() -> bool:
+    """
+    Refresh the access token using the refresh token.
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    token = st.session_state.get("google_token")
+    if not token or "refresh_token" not in token:
+        logger.error("Cannot refresh: no token or refresh_token")
+        return False
+    
+    config = get_oauth_config()
+    if not config:
+        logger.error("Cannot refresh: OAuth config not available")
+        return False
+    
+    try:
+        import requests
+        from authlib.integrations.requests_client import OAuth2Session
+        
+        # Create OAuth2Session
+        client = OAuth2Session(
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+            token=token
+        )
+        
+        # Refresh the token
+        new_token = client.refresh_token(
+            GOOGLE_TOKEN_ENDPOINT,
+            refresh_token=token["refresh_token"]
+        )
+        
+        # Update stored token
+        st.session_state["google_token"] = new_token
+        
+        # Save refreshed token to Drive
+        try:
+            save_token_to_drive(new_token)
+        except Exception as e:
+            logger.warning(f"Could not save refreshed token to Drive: {e}")
+        
+        logger.info("Successfully refreshed access token")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Token refresh failed: {e}")
+        return False
 
 
 def get_user_email() -> Optional[str]:
@@ -302,7 +369,6 @@ def save_token_to_drive(token: Dict[str, Any]) -> bool:
         from googleapiclient.discovery import build
         from google.oauth2.credentials import Credentials
         from googleapiclient.http import MediaInMemoryUpload
-        import io
         
         # Get config to create credentials
         config = get_oauth_config()

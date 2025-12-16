@@ -7,7 +7,7 @@ This tests the logic without requiring actual OAuth credentials.
 import sys
 import os
 
-# Mock streamlit before importing our modules
+# Mock Streamlit before importing our modules
 class MockSessionState(dict):
     """Mock session_state that behaves like a dict and object"""
     def __getattr__(self, name):
@@ -17,7 +17,7 @@ class MockSessionState(dict):
         self[name] = value
 
 class MockStreamlit:
-    """Mock streamlit module"""
+    """Mock Streamlit module"""
     session_state = MockSessionState()
     query_params = {}
     secrets = {}
