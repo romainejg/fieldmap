@@ -1,6 +1,6 @@
 # Google Drive Integration Guide
 
-This guide explains how to set up Google Drive integration for Fieldmap, allowing you to automatically save photos to your Google Drive.
+This guide explains how to set up Google Drive integration for Fieldmap. Google Drive is the exclusive storage backend for Fieldmap - all photos are automatically saved to your Google Drive.
 
 ## Prerequisites
 
@@ -23,44 +23,96 @@ This guide explains how to set up Google Drive integration for Fieldmap, allowin
 2. Search for "Google Drive API"
 3. Click on it and press "Enable"
 
-### 3. Create OAuth2 Credentials
+### 3. Configure OAuth Consent Screen
 
-1. Go to "APIs & Services" → "Credentials"
-2. Click "Create Credentials" → "OAuth client ID"
-3. If prompted, configure the OAuth consent screen:
-   - User Type: External (for personal use) or Internal (for organization)
+1. Go to "APIs & Services" → "OAuth consent screen"
+2. User Type: **External** (for personal use) or **Internal** (for organization)
+3. Click "Create"
+4. Fill in the required information:
    - App name: "Fieldmap"
    - User support email: Your email
    - Developer contact: Your email
-   - Add scope: `https://www.googleapis.com/auth/drive.file`
-   - Add test users (your email) if using External
-4. Back to "Create Credentials" → "OAuth client ID"
-5. Application type: **Desktop app**
-6. Name: "Fieldmap Desktop Client"
-7. Click "Create"
+5. Click "Save and Continue"
+6. On the Scopes page, click "Add or Remove Scopes"
+7. Add scope: `https://www.googleapis.com/auth/drive.file`
+8. Click "Save and Continue"
+9. If using External, add test users (your email)
+10. Click "Save and Continue" → "Back to Dashboard"
 
-### 4. Download Credentials
+### 4. Create OAuth2 Web Application Credentials
 
-1. After creating, click the download button (↓) next to your OAuth client
-2. This downloads a JSON file
-3. Rename it to **`credentials.json`**
-4. Move it to your Fieldmap app directory (same folder as `app.py`)
+1. Go to "APIs & Services" → "Credentials"
+2. Click "Create Credentials" → "OAuth client ID"
+3. Application type: **Web application**
+4. Name: "Fieldmap Web Client"
+5. Add Authorized redirect URIs:
+   - For Streamlit Cloud: `https://your-app.streamlit.app`
+   - For local development: `http://localhost:8501`
+6. Click "Create"
+7. Copy the entire JSON (including client_id and client_secret)
 
-### 5. First-Time Authentication
+### 5. Configure App Secrets
+
+#### For Streamlit Cloud:
+
+1. Go to your app in Streamlit Cloud
+2. Click "Settings" → "Secrets"
+3. Add the following secrets:
+
+```toml
+GOOGLE_OAUTH_CLIENT_JSON = '''
+{
+  "web": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "redirect_uris": ["https://your-app.streamlit.app"]
+  }
+}
+'''
+
+GOOGLE_REDIRECT_URI = "https://your-app.streamlit.app"
+
+# Generate this with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+OAUTH_STATE_SECRET = "your-generated-secret-here"
+```
+
+#### For Local Development:
+
+1. Create `.streamlit/secrets.toml` file in your Fieldmap directory
+2. Add the following (replace with your credentials):
+
+```toml
+GOOGLE_OAUTH_CLIENT_JSON = '''
+{
+  "web": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "client_secret": "YOUR_CLIENT_SECRET",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "redirect_uris": ["http://localhost:8501"]
+  }
+}
+'''
+
+GOOGLE_REDIRECT_URI = "http://localhost:8501"
+
+# Generate this with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+OAUTH_STATE_SECRET = "your-generated-secret-here"
+```
+
+3. Never commit this file to git (it's in `.gitignore`)
+
+### 6. First-Time Authentication
 
 1. Start the Fieldmap app: `streamlit run app.py`
-2. In the sidebar, click **"Sign in with Google"**
-3. A browser window will open for authentication
-4. Sign in with your Google account
+2. Navigate to the About page
+3. Click **"Sign in with Google"**
+4. Complete the Google OAuth consent screen
 5. Grant permissions to Fieldmap
-6. You'll see "Authentication successful" message
-7. A `token.pickle` file is created (stores your auth token)
-
-### 6. Enable Cloud Storage
-
-1. After signing in, you'll see your email in the sidebar
-2. Check the box **"Save photos to Google Drive"**
-3. Photos will now automatically save to Google Drive!
+6. You'll be redirected back to the app
+7. You should see "✅ Successfully signed in!" message
 
 ## How It Works
 
@@ -88,38 +140,50 @@ Google Drive/
 
 ### Storage Behavior
 
-- **In-Memory First**: Photos are always kept in memory for fast access
-- **Optional Cloud Backup**: When enabled, photos are also saved to Google Drive
+- **Cloud-First**: All photos are automatically saved to Google Drive
+- **Dual Storage**: Photos kept in memory for fast access, Drive for persistence
 - **Automatic Upload**: Happens when you take or annotate photos
-- **URIs Stored**: Photo metadata includes Google Drive file ID for retrieval
+- **File ID Tracking**: Photo metadata includes Google Drive file ID for retrieval
 
 ### Authentication Token
 
-- The `token.pickle` file stores your authentication
-- **Never commit this to git** (it's in `.gitignore`)
-- Valid for extended periods (auto-refreshes)
-- To sign out: Click "Sign Out" in sidebar (deletes token)
+- Tokens are stored in session state (memory only)
+- Tokens are not persisted to disk
+- Valid for the duration of your session
+- To sign out: Click "Sign Out" in sidebar
 
 ## Troubleshooting
 
-### "Credentials file not found"
+### "OAuth credentials not configured"
 
-**Problem:** `credentials.json` is missing
-
-**Solution:**
-1. Download OAuth2 credentials from Google Cloud Console
-2. Rename to `credentials.json`
-3. Place in app directory
-
-### "Authentication failed"
-
-**Problem:** OAuth consent screen not properly configured
+**Problem:** Secrets are not properly set
 
 **Solution:**
-1. Go to Google Cloud Console
-2. APIs & Services → OAuth consent screen
-3. Add your email as a test user
-4. Ensure app status is "Testing" or "Published"
+1. For Streamlit Cloud: Add secrets in app settings
+2. For local: Create `.streamlit/secrets.toml` with credentials
+3. See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed instructions
+
+### "redirect_uri_mismatch"
+
+**Problem:** Redirect URI in Google Cloud Console doesn't match deployment URL
+
+**Solution:**
+1. Go to Google Cloud Console → Credentials
+2. Edit your OAuth client
+3. Ensure redirect URI exactly matches:
+   - Production: `https://your-app.streamlit.app` (no trailing slash, no /oauth2callback)
+   - Local: `http://localhost:8501`
+4. Save and try again
+
+### "Invalid OAuth state"
+
+**Problem:** CSRF protection detected a potential attack or session was reset
+
+**Solution:**
+1. Clear browser cookies for the app
+2. Try the sign-in flow again
+3. Don't use browser back button during OAuth
+4. Ensure `OAUTH_STATE_SECRET` is configured in secrets
 
 ### "Failed to save to storage"
 
@@ -138,15 +202,16 @@ Google Drive/
 **Solution:**
 1. Refresh Google Drive in browser
 2. Check the "Fieldmap" folder in "My Drive"
-3. Verify "Save photos to Google Drive" is enabled
+3. Verify you're signed in (check About page)
 
 ## Security Best Practices
 
-1. **Never share `credentials.json`**: Contains OAuth client secret
-2. **Never commit `token.pickle`**: Contains your access token
+1. **Never commit secrets**: Keep `.streamlit/secrets.toml` out of git
+2. **Use environment-specific secrets**: Different credentials for local vs production
 3. **Use OAuth2**: More secure than API keys
 4. **Scope Limitation**: App only requests `drive.file` scope (can only access files it creates)
-5. **Revoke Access**: Can revoke in [Google Account Settings](https://myaccount.google.com/permissions)
+5. **Stateless OAuth**: Uses cryptographically signed state tokens for CSRF protection
+6. **Revoke Access**: Can revoke in [Google Account Settings](https://myaccount.google.com/permissions)
 
 ## Permissions Explained
 
@@ -159,56 +224,45 @@ The app requests these Google permissions:
 
 ## Advanced Configuration
 
-### Custom Credentials Location
+### Custom OAuth State Secret
 
-You can specify a custom credentials path:
+For production deployments, always set a strong OAuth state secret:
 
-```python
-# In google_auth.py, modify:
-google_auth = GoogleAuthHelper(
-    credentials_path='/path/to/credentials.json',
-    token_path='/path/to/token.pickle'
-)
+```bash
+# Generate a secure secret
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Add to secrets.toml
+OAUTH_STATE_SECRET = "generated-secret-here"
 ```
 
-### Disabling Cloud Storage
+### Environment Variables
 
-To temporarily disable cloud storage:
-1. Uncheck "Save photos to Google Drive" in sidebar
-2. Photos will only be stored in memory
-3. Previously uploaded photos remain in Drive
+You can also use environment variables instead of secrets.toml:
 
-### Re-authentication
-
-If you need to re-authenticate:
-1. Click "Sign Out" in sidebar
-2. Click "Sign in with Google"
-3. Authorize again
+```bash
+export GOOGLE_CLIENT_ID="your-client-id"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+export APP_BASE_URL="http://localhost:8501"
+export OAUTH_STATE_SECRET="your-generated-secret"
+```
 
 ## Limitations
 
-- **Upload Only**: Current implementation doesn't auto-download from Drive
-- **Session-based**: Photos are in-memory during session
-- **Manual Backup**: For persistent local storage, use LocalFolderStorage instead
+- **Cloud-Only**: Google Drive is the only storage option
+- **Authentication Required**: Must sign in to use the app
 - **Single Account**: One Google account per session
-
-## Future Enhancements
-
-Potential future features:
-- Download photos from Google Drive on startup
-- Sync photos across devices
-- Shared albums for collaboration
-- Automatic conflict resolution
-- Google Photos integration (in addition to Drive)
+- **Session-Based**: Tokens not persisted across app restarts
 
 ## Support
 
 If you encounter issues:
-1. Check logs in terminal where Streamlit is running
-2. Verify credentials.json is valid JSON
+1. Check the app logs in terminal or Streamlit Cloud
+2. Verify secrets are correctly configured
 3. Ensure Google Drive API is enabled
 4. Check Google Cloud Console quotas
+5. Review [SETUP_GUIDE.md](SETUP_GUIDE.md) for complete setup instructions
 
 For more help, refer to:
 - [Google Drive API Documentation](https://developers.google.com/drive/api/guides/about-sdk)
-- [OAuth2 for Desktop Apps](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [OAuth2 for Web Apps](https://developers.google.com/identity/protocols/oauth2/web-server)

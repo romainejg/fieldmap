@@ -217,6 +217,7 @@ fieldmap/
 ├── app.py                      # Main application
 ├── storage.py                  # Storage abstraction layer
 ├── google_auth.py              # Google OAuth2 helper
+├── google_oauth.py             # OAuth flow implementation
 ├── requirements.txt            # Python dependencies
 ├── components/
 │   └── photo_editor/          # Custom Streamlit component
@@ -224,14 +225,14 @@ fieldmap/
 │       └── frontend/          # marker.js integration
 ├── assets/
 │   └── logo.png               # App logo
-├── tests/
-│   ├── test_derived_photos.py
-│   ├── test_integration.py
-│   └── test_photo_editor_component.py
-├── docs/
-│   ├── GOOGLE_DRIVE_SETUP.md  # Google Drive setup guide
-│   ├── STORAGE_README.md      # Storage module docs
-│   └── IMPLEMENTATION_SUMMARY.md  # Implementation details
+├── test_derived_photos.py
+├── test_integration.py
+├── test_google_oauth_state.py
+├── test_photo_editor_component.py
+├── GOOGLE_DRIVE_SETUP.md      # Google Drive setup guide
+├── STORAGE_README.md          # Storage module docs
+├── SETUP_GUIDE.md             # Complete setup guide
+├── TESTING_GUIDE.md           # Testing instructions
 └── .gitignore
 ```
 
@@ -387,9 +388,10 @@ This project is provided as-is for educational and research purposes.
 
 For issues or questions:
 
-1. Check [GOOGLE_DRIVE_SETUP.md](GOOGLE_DRIVE_SETUP.md) for Google Drive issues
-2. Review [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) for technical details
-3. Open an issue on GitHub
+1. Check [SETUP_GUIDE.md](SETUP_GUIDE.md) for setup instructions
+2. Review [GOOGLE_DRIVE_SETUP.md](GOOGLE_DRIVE_SETUP.md) for Google Drive issues
+3. Check [TESTING_GUIDE.md](TESTING_GUIDE.md) for testing guidance
+4. Open an issue on GitHub
 
 ## 🗺️ Roadmap
 
