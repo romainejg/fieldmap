@@ -12,7 +12,6 @@ import io
 import base64
 import json
 import os
-import html
 from datetime import datetime
 from pathlib import Path
 import numpy as np
@@ -1295,8 +1294,8 @@ class AboutPage(BasePage):
                     auth_url = st.session_state.get(PENDING_AUTH_URL_KEY)
                     if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
-                        # Use html.escape for additional defense in depth
-                        safe_url = html.escape(json.dumps(auth_url), quote=True)
+                        # json.dumps() provides proper escaping for JavaScript context
+                        safe_url = json.dumps(auth_url)
                         components.html(
                             f"""
                             <script>
@@ -1348,7 +1347,7 @@ class AboutPage(BasePage):
                     pending_auth_url = st.session_state.get(PENDING_AUTH_URL_KEY, "(not generated yet)")
                     if pending_auth_url and pending_auth_url != "(not generated yet)":
                         # Truncate for security (don't show full URL with state param)
-                        truncated = pending_auth_url[:MAX_URL_DISPLAY_LENGTH] + "..." if len(pending_auth_url) > MAX_URL_DISPLAY_LENGTH else pending_auth_url
+                        truncated = (pending_auth_url[:MAX_URL_DISPLAY_LENGTH] + "...") if len(pending_auth_url) > MAX_URL_DISPLAY_LENGTH else pending_auth_url
                         st.code(truncated)
                     else:
                         st.text(pending_auth_url)

@@ -49,12 +49,12 @@ class GoogleAuthHelper:
             
             # Validate that this is a Web application OAuth client
             # The JSON should have a "web" key, not "installed"
-            if "installed" in config:
-                st.error("⚠️ **Configuration Error**: OAuth client type is 'installed' (Desktop app). Please use a 'web' application type for proper redirect flow.")
-                return None
-            
             if "web" not in config:
-                st.warning("⚠️ **Configuration Warning**: OAuth client configuration doesn't have expected 'web' key. OAuth may not work correctly.")
+                if "installed" in config:
+                    st.error("⚠️ **Configuration Error**: OAuth client type is 'installed' (Desktop app). Please use a 'web' application type for proper redirect flow.")
+                else:
+                    st.warning("⚠️ **Configuration Warning**: OAuth client configuration doesn't have expected 'web' key. OAuth may not work correctly.")
+                return None
             
             return config
         except json.JSONDecodeError:
