@@ -1,13 +1,16 @@
 """
 Google OAuth implementation using Authlib for Streamlit Cloud.
 Clean, proven approach with root URL redirect and no cookie managers.
+Uses stateless signed OAuth state tokens for secure callback validation.
 """
 
 import streamlit as st
 import json
 import os
+import secrets
 from typing import Optional, Dict, Any
 from authlib.integrations.requests_client import OAuth2Session
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 import logging
 
 # Configure logger
@@ -20,6 +23,79 @@ GOOGLE_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 # OAuth scope
 OAUTH_SCOPE = "openid email profile https://www.googleapis.com/auth/drive.file"
+
+# OAuth state configuration
+OAUTH_STATE_SALT = "fieldmap-oauth-state"
+DEFAULT_OAUTH_STATE_MAX_AGE = 300  # 5 minutes
+
+
+def get_oauth_state_secret() -> str:
+    """
+    Get OAuth state secret from environment or Streamlit secrets.
+    Falls back to a dev-only random secret for local development.
+    
+    Returns:
+        Secret key string for signing OAuth state tokens
+    """
+    secret = None
+    
+    # Try Streamlit secrets first
+    try:
+        secret = st.secrets.get("OAUTH_STATE_SECRET")
+    except Exception:
+        pass
+    
+    # Fall back to environment variable if not found in secrets
+    if not secret:
+        secret = os.environ.get("OAUTH_STATE_SECRET")
+    
+    if not secret:
+        # For development only: generate a random secret
+        # In production, this should always be set explicitly
+        logger.warning("OAUTH_STATE_SECRET not set - generating dev-only random secret")
+        logger.warning("For production, set OAUTH_STATE_SECRET environment variable")
+        secret = secrets.token_urlsafe(32)
+    
+    return secret
+
+
+def get_state_serializer() -> URLSafeTimedSerializer:
+    """
+    Get URLSafeTimedSerializer for signing OAuth state tokens.
+    
+    Returns:
+        URLSafeTimedSerializer instance
+    """
+    secret = get_oauth_state_secret()
+    return URLSafeTimedSerializer(secret, salt=OAUTH_STATE_SALT)
+
+
+def get_oauth_state_max_age() -> int:
+    """
+    Get maximum age for OAuth state tokens in seconds.
+    
+    Returns:
+        Max age in seconds (default: 300 = 5 minutes)
+    """
+    max_age = None
+    
+    # Try Streamlit secrets first
+    try:
+        max_age = st.secrets.get("OAUTH_STATE_MAX_AGE")
+    except Exception:
+        pass
+    
+    # Fall back to environment variable if not found in secrets
+    if not max_age:
+        max_age = os.environ.get("OAUTH_STATE_MAX_AGE")
+    
+    if max_age:
+        try:
+            return int(max_age)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid OAUTH_STATE_MAX_AGE value: {max_age}, using default")
+    
+    return DEFAULT_OAUTH_STATE_MAX_AGE
 
 
 def get_oauth_config() -> Optional[Dict[str, str]]:
@@ -93,9 +169,10 @@ def clear_auth_state():
     """
     Clear all OAuth-related state from session_state.
     Helper function to eliminate duplication.
+    Note: With signed state tokens, we don't store oauth_state in session anymore.
     """
     logger.info("clear_auth_state() - Clearing OAuth state from session")
-    keys_to_clear = ["oauth_state", "auth_in_progress", "pending_auth_url"]
+    keys_to_clear = ["auth_in_progress", "pending_auth_url"]
     for key in keys_to_clear:
         if key in st.session_state:
             logger.debug(f"Deleting {key} from session_state")
@@ -105,9 +182,9 @@ def clear_auth_state():
 
 def build_auth_url() -> Optional[str]:
     """
-    Generate OAuth authorization URL with state and nonce.
-    Uses Authlib OAuth2Session.
-    Persists oauth_state in session_state which survives redirects.
+    Generate OAuth authorization URL with cryptographically signed state.
+    Uses URLSafeTimedSerializer to create a stateless, time-limited state token.
+    State verification does not depend on session_state persistence.
     
     Returns:
         Authorization URL or None if config not available
@@ -142,30 +219,44 @@ def build_auth_url() -> Optional[str]:
         return None
     
     try:
-        # Create OAuth2Session
+        # Generate signed state token using URLSafeTimedSerializer
+        logger.debug("Generating signed OAuth state token")
+        serializer = get_state_serializer()
+        
+        # Create state payload with a random nonce
+        state_payload = {
+            "nonce": secrets.token_hex(16)
+        }
+        
+        # Sign and serialize the state
+        signed_state = serializer.dumps(state_payload)
+        
+        logger.info(f"Generated signed OAuth state token (first 20 chars): {signed_state[:20]}...")
+        logger.info(f"State payload nonce: {state_payload['nonce'][:16]}...")
+        
+        # Create OAuth2Session with the signed state
         logger.debug("Creating OAuth2Session")
         client = OAuth2Session(
             client_id=config["client_id"],
             client_secret=config["client_secret"],
             scope=OAUTH_SCOPE,
-            redirect_uri=redirect_uri
+            redirect_uri=redirect_uri,
+            state=signed_state  # Use our signed state instead of letting Authlib generate one
         )
         
-        # Generate authorization URL with state
+        # Generate authorization URL
         logger.debug("Calling create_authorization_url()")
-        auth_url, state = client.create_authorization_url(
+        auth_url, _ = client.create_authorization_url(
             GOOGLE_AUTH_ENDPOINT,
             access_type="offline",
             prompt="consent"
         )
         
-        # Store state in session_state for verification
-        # Session state persists across redirects within the same browser session
-        logger.info(f"Generated state: {state}")
-        logger.info(f"Storing state in session_state['oauth_state']")
-        st.session_state["oauth_state"] = state
+        # Note: We do NOT store state in session_state for verification
+        # The signed state token is self-contained and stateless
+        logger.info("Signed state token is stateless - not storing in session_state")
         
-        # Set auth_in_progress flag to prevent state overwrite on reruns
+        # Set auth_in_progress flag to prevent duplicate auth attempts
         logger.info("Setting auth_in_progress=True")
         st.session_state["auth_in_progress"] = True
         st.session_state["pending_auth_url"] = auth_url
@@ -184,8 +275,8 @@ def build_auth_url() -> Optional[str]:
 def handle_callback() -> bool:
     """
     Handle OAuth callback when user returns from Google.
-    Verifies state, exchanges code for token, and stores in session_state.
-    Retrieves expected_state from session_state (persists across redirects).
+    Verifies cryptographically signed state token (stateless verification).
+    Exchanges code for token and stores in session_state.
     
     Returns:
         True if authentication successful, False otherwise
@@ -207,46 +298,58 @@ def handle_callback() -> bool:
     returned_state = query_params.get("state")
     
     logger.info(f"Code received: {code[:20]}...")
-    logger.info(f"State from Google: {returned_state[:16] if returned_state else 'MISSING'}...")
+    logger.info(f"State from Google (first 20 chars): {returned_state[:20] if returned_state else 'MISSING'}...")
     
-    # Verify state - retrieve from session_state (persists across redirects)
-    expected_state = st.session_state.get("oauth_state")
-    
-    logger.info("Checking for oauth_state in session_state...")
-    if not expected_state:
+    # Verify signed state token
+    if not returned_state:
         logger.error("="*80)
-        logger.error("CRITICAL: No oauth_state found in session_state")
+        logger.error("CRITICAL: No state parameter in callback URL")
         logger.error("="*80)
-        logger.error(f"All session_state keys: {list(st.session_state.keys())}")
-        logger.error(f"All query_params: {dict(query_params)}")
-        
-        # Check if there's an auth_in_progress flag
-        if st.session_state.get("auth_in_progress"):
-            logger.error("auth_in_progress=True but oauth_state is missing - this indicates state was lost")
-        else:
-            logger.error("auth_in_progress not set - this may indicate session was completely reset")
-        
         st.error("❌ Auth session expired. Please click Sign in again.")
         logger.error("Showing 'Auth session expired' error to user")
         return False
     
-    logger.info(f"Retrieved expected_state from session_state: {expected_state}")
-    logger.info(f"Expected state (first 16 chars): {expected_state[:16]}")
-    logger.info(f"Returned state (first 16 chars): {returned_state[:16] if returned_state else 'MISSING'}")
-    
-    # Compare states
-    if returned_state != expected_state:
-        logger.error("="*80)
-        logger.error("CRITICAL: State mismatch detected")
-        logger.error("="*80)
-        logger.error(f"Expected: {expected_state}")
-        logger.error(f"Received: {returned_state}")
-        logger.error(f"States match: {returned_state == expected_state}")
+    try:
+        # Verify and decode the signed state token
+        logger.info("Verifying signed OAuth state token...")
+        serializer = get_state_serializer()
+        max_age = get_oauth_state_max_age()
         
+        logger.debug(f"Using max_age={max_age} seconds for state verification")
+        
+        # This will raise SignatureExpired if token is too old
+        # or BadSignature if token was tampered with
+        state_payload = serializer.loads(returned_state, max_age=max_age)
+        
+        logger.info("✓ Signed OAuth state token verified successfully!")
+        logger.info(f"State payload nonce: {state_payload.get('nonce', 'N/A')[:16]}...")
+        logger.info(f"Token age was within {max_age} seconds")
+        
+    except SignatureExpired as e:
+        logger.error("="*80)
+        logger.error("CRITICAL: OAuth state token expired")
+        logger.error("="*80)
+        logger.error(f"Token exceeded max age of {get_oauth_state_max_age()} seconds")
+        logger.error(f"Error: {e}")
         st.error("❌ Auth session expired. Please click Sign in again.")
         return False
-    
-    logger.info("✓ State verification successful - states match!")
+        
+    except BadSignature as e:
+        logger.error("="*80)
+        logger.error("CRITICAL: Invalid or tampered OAuth state token")
+        logger.error("="*80)
+        logger.error(f"Signature verification failed - possible tampering or wrong secret")
+        logger.error(f"Error: {e}")
+        st.error("❌ Auth session expired. Please click Sign in again.")
+        return False
+        
+    except Exception as e:
+        logger.error("="*80)
+        logger.error("CRITICAL: Unexpected error verifying OAuth state token")
+        logger.error("="*80)
+        logger.error(f"Error: {e}", exc_info=True)
+        st.error("❌ Auth session expired. Please click Sign in again.")
+        return False
     
     # Get config
     config = get_oauth_config()
@@ -284,7 +387,7 @@ def handle_callback() -> bool:
         st.session_state["google_token"] = token
         
         # Clean up OAuth state using helper function
-        logger.info("Clearing auth state (oauth_state, auth_in_progress, pending_auth_url)")
+        logger.info("Clearing auth state (auth_in_progress, pending_auth_url)")
         clear_auth_state()
         
         # Save token to Google Drive for persistence
