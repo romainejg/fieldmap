@@ -1190,10 +1190,14 @@ class AboutPage(BasePage):
                             if self.google_auth.handle_oauth_callback(auth_response_url):
                                 st.session_state.google_authed = True
                                 st.session_state.google_user_email = self.google_auth.get_user_email()
-                                # Clear query params and state
+                                # Clear query params, state, and pending auth
                                 st.query_params.clear()
                                 if 'oauth_state' in st.session_state:
                                     del st.session_state.oauth_state
+                                if 'pending_auth_url' in st.session_state:
+                                    del st.session_state.pending_auth_url
+                                if 'redirect_initiated' in st.session_state:
+                                    del st.session_state.redirect_initiated
                                 st.success("✅ Successfully signed in!")
                                 st.rerun()
                             else:
@@ -1265,15 +1269,18 @@ class AboutPage(BasePage):
                 if st.button("Sign in with Google", key="google_signin_about", type="primary", use_container_width=True):
                     auth_url = self.google_auth.get_auth_url()
                     if auth_url:
-                        # Store auth_url for fallback
+                        # Store auth_url for fallback and set flag for redirect
                         st.session_state["pending_auth_url"] = auth_url
                         st.session_state["redirect_initiated"] = True
                         st.rerun()
                     else:
                         st.error("Failed to generate authorization URL. Check OAuth Debug Info below.")
                 
-                # If redirect was just initiated, show the JavaScript redirect
+                # If redirect was just initiated, show the JavaScript redirect and clear flag
                 if st.session_state.get("redirect_initiated", False):
+                    # Clear the flag immediately so we don't keep showing the redirect
+                    st.session_state["redirect_initiated"] = False
+                    
                     auth_url = st.session_state.get("pending_auth_url")
                     if auth_url:
                         # Use JavaScript to immediately redirect (one-step sign-in)
@@ -1286,11 +1293,13 @@ class AboutPage(BasePage):
                             """,
                             height=0
                         )
-                        # Clear the flag so it doesn't keep redirecting
-                        st.session_state["redirect_initiated"] = False
-                
-                # Fallback link_button if pending auth URL exists (JS redirect may have failed)
-                if "pending_auth_url" in st.session_state and st.session_state["pending_auth_url"]:
+                        # Show message while redirect is happening
+                        st.caption("⏳ Redirecting to Google...")
+                        # Don't show fallback in same render - give redirect time to work
+                        
+                elif "pending_auth_url" in st.session_state and st.session_state["pending_auth_url"]:
+                    # Fallback link_button shown on subsequent renders if user is still here
+                    # (either JS failed, was blocked, or user clicked back from Google)
                     st.link_button(
                         "Continue to Google",
                         st.session_state["pending_auth_url"],
@@ -1298,6 +1307,11 @@ class AboutPage(BasePage):
                         use_container_width=True
                     )
                     st.caption("⬆️ Click above if you weren't automatically redirected")
+                    # Provide a way to clear and try again
+                    if st.button("Try Again", key="clear_pending_auth"):
+                        if "pending_auth_url" in st.session_state:
+                            del st.session_state["pending_auth_url"]
+                        st.rerun()
                 
                 # Add guidance about test users
                 st.caption("💡 **Note:** If OAuth consent screen is in Testing mode, ensure your Google account is added as a Test User in Google Cloud Console.")
