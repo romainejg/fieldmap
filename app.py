@@ -758,6 +758,7 @@ class GalleryPage(BasePage):
         if sorted_containers != sortable_containers:
             new_structure = {}
             changes_made = False
+            move_operations = []  # Track files that need to be moved in Drive
             
             for idx, container in enumerate(sorted_containers):
                 if idx < len(session_name_map):
@@ -769,10 +770,22 @@ class GalleryPage(BasePage):
                 for item_id in container["items"]:
                     if item_id in original_structure:
                         photo_info = original_structure[item_id]
-                        new_photos.append(photo_info['photo'])
+                        photo = photo_info['photo']
+                        original_session = photo_info['session']
+                        
+                        new_photos.append(photo)
+                        
+                        # Check if photo moved to a different session
+                        if original_session != session_name and photo.get('file_id'):
+                            move_operations.append({
+                                'file_id': photo['file_id'],
+                                'from_session': original_session,
+                                'to_session': session_name
+                            })
                 
                 new_structure[session_name] = new_photos
             
+            # Update in-memory structure
             for session_name, photos in new_structure.items():
                 if session_name not in st.session_state.sessions:
                     st.session_state.sessions[session_name] = []
@@ -781,10 +794,23 @@ class GalleryPage(BasePage):
                     st.session_state.sessions[session_name] = photos
                     changes_made = True
             
+            # Update Drive folder parents if storage is available
+            if self.session_store.storage and move_operations:
+                for move_op in move_operations:
+                    try:
+                        success = self.session_store.storage.move_image(
+                            move_op['file_id'],
+                            move_op['from_session'],
+                            move_op['to_session']
+                        )
+                        if success:
+                            logger.info(f"Moved photo in Drive: {move_op['file_id']} from {move_op['from_session']} to {move_op['to_session']}")
+                    except Exception as e:
+                        logger.error(f"Failed to move photo in Drive: {e}")
+                        st.error(f"⚠️ Failed to update Drive folder for some photos. Changes saved locally.")
+            
             if changes_made:
-                st.success("✓ Photos reorganized!")
-                # Note: When drag-and-drop is implemented with Drive parent updates,
-                # this will also call storage.move_image(file_id, from_session, to_session)
+                st.success("✓ Photos reorganized!" + (" Drive folders updated." if move_operations else ""))
                 st.rerun()
         
         # Add selection buttons for viewing details
