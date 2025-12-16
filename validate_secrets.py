@@ -67,7 +67,7 @@ def validate_secrets():
         
         # Validate it's a dict/table
         if not isinstance(sa_data, dict):
-            print(f"  ❌ Service account should be a TOML table, got: {type(sa_data)}")
+            print(f"  ❌ Service account should be a TOML table (e.g., [google_service_account]) not a string, got: {type(sa_data)}")
             issues.append("Service account format (should be TOML table)")
         else:
             print("  ✓ Service account is a TOML table")

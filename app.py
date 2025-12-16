@@ -4,19 +4,21 @@ A Streamlit-based mobile web app for biomedical engineers to capture, annotate, 
 Uses Streamlit-native OAuth/OIDC flow with Google service account for Drive storage
 """
 
-import streamlit as st
-import streamlit.components.v1 as components
-import pandas as pd
-from PIL import Image
-import io
 import base64
+import io
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+
 import numpy as np
-from components.photo_editor import photo_editor, decode_image_from_dataurl
+import pandas as pd
+import streamlit as st
+import streamlit.components.v1 as components
+from PIL import Image
 from streamlit_sortables import sort_items
+
+from components.photo_editor import photo_editor, decode_image_from_dataurl
 from storage import GoogleDriveStorage
 
 # Configure comprehensive logging

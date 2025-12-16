@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 Test to verify that the app handles missing service account gracefully.
-This test simulates what happens when service account is not configured.
+
+This test validates the transition from GOOGLE_SERVICE_ACCOUNT_JSON string format
+to [google_service_account] TOML table format. It ensures:
+- Service account loads correctly from TOML table
+- No json.loads() is called on dict data
+- App doesn't crash when service account is missing
 """
 
 import sys
