@@ -34,7 +34,13 @@ class GoogleAuthHelper:
             EncryptedCookieManager instance
         """
         # Use a password from secrets or a default one
-        # For production, this should be in secrets
+        # Note: The cookie only stores the OAuth state (a random CSRF token),
+        # not credentials. While a custom password is recommended for production,
+        # using a default password here is acceptable since:
+        # 1. The state itself is a cryptographically random token
+        # 2. State is validated server-side against stored value
+        # 3. State contains no sensitive user data
+        # For production, set COOKIE_PASSWORD in Streamlit secrets
         try:
             password = st.secrets.get("COOKIE_PASSWORD", "fieldmap-oauth-cookie-secret-key-change-me")
         except Exception:
@@ -292,9 +298,14 @@ class GoogleAuthHelper:
             )
             
             # Generate a secure random state token
+            # We generate our own state (instead of letting the library generate it)
+            # so we can store it in both cookie and session_state before the redirect.
+            # The library accepts a custom state parameter and will use it in the auth URL.
             state = secrets.token_urlsafe(32)
             
             # Build auth URL with the state
+            # The state parameter is passed to authorization_url() and will be used
+            # in the returned URL. The second return value would be the same state.
             auth_url, _ = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',

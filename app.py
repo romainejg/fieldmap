@@ -1451,7 +1451,11 @@ class App:
                     st.code(expected_state[:8] if expected_state else "(none)")
                 
                 st.text(f"State source: {state_source}")
-                st.text(f"Cookie present: {'oauth_state' in self.google_auth.cookies if hasattr(self.google_auth, 'cookies') else 'N/A'}")
+                try:
+                    cookie_present = 'oauth_state' in self.google_auth.cookies
+                    st.text(f"Cookie present: {cookie_present}")
+                except (AttributeError, Exception):
+                    st.text("Cookie present: N/A (cookie manager not ready)")
                 
                 st.info("Please try signing in again.")
                 
