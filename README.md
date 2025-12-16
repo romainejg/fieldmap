@@ -5,24 +5,23 @@ A mobile-optimized Streamlit web app for biomedical engineers to capture, annota
 ## 🎯 Key Features
 
 - **📸 Photo Capture**: Take photos directly from the camera
-- **✏️ Annotation Tools**: Draw, add shapes, and annotate photos
+- **✏️ Annotation Tools**: Draw, add shapes, and annotate photos with MarkerJS 3
 - **📝 Derived Photos**: Edits create new copies, keeping originals unchanged
-- **📁 Session Organization**: Organize photos into named sessions
+- **📁 Session Organization**: Organize photos into named sessions (albums)
 - **🔄 Drag & Drop**: Reorganize photos between sessions in the gallery
-- **☁️ Google Drive Storage**: Automatic cloud backup via service account (required)
+- **☁️ Google Drive Storage**: Photos stored in YOUR Google Drive (no quota issues)
 - **📊 Excel Export**: Export photo metadata and comments to Excel
 - **🖼️ Gallery View**: Thumbnail tiles with click-to-expand details
-- **🔐 Streamlit Native Auth**: Simple Google OIDC login with `st.login()` / `st.logout()`
+- **🔐 User OAuth**: Sign in with Google to access your Drive
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Python 3.8+
-- Streamlit >= 1.42.0 (for native authentication)
+- Streamlit >= 1.42.0
 - Google Cloud account with Drive API enabled
-- Google OAuth 2.0 Web Application credentials (for user identity)
-- Google Service Account (for Drive storage)
+- Google OAuth 2.0 Web Application credentials
 
 ### Installation
 
@@ -40,11 +39,10 @@ pip install -r requirements.txt
 **For detailed setup instructions, see [docs/SETUP.md](docs/SETUP.md)**
 
 Quick overview:
-1. Create Google OAuth 2.0 Web Application credentials (for user identity)
-2. Create Google Service Account (for Drive storage)
-3. Share "Fieldmap" Drive folder with service account email
-4. Configure secrets in `.streamlit/secrets.toml` or Streamlit Cloud
-5. Run the app and sign in with Google using Streamlit's native auth
+1. Create Google OAuth 2.0 Web Application credentials in Google Cloud Console
+2. Configure secrets in `.streamlit/secrets.toml` or Streamlit Cloud
+3. Run the app and sign in with Google
+4. Photos will be uploaded to a "Fieldmap" folder in your Google Drive
 
 ### Local Development
 
@@ -54,7 +52,7 @@ cp .streamlit/secrets.toml.template .streamlit/secrets.toml
 
 # Edit .streamlit/secrets.toml with your credentials:
 # - [auth] section with OAuth Web App credentials
-# - [google_service_account] table with service account fields
+# - Set redirect_uri to http://localhost:8501/oauth2callback for local dev
 
 # Run the app
 streamlit run app.py
@@ -68,7 +66,7 @@ See [docs/SETUP.md](docs/SETUP.md) for complete setup instructions.
 
 ### Basic Workflow
 
-1. **Sign In**: Click "Sign in with Google" on the About page (uses Streamlit's native auth)
+1. **Sign In**: Click "Sign in with Google" on the About page
 2. **Take Photo**: Use the camera input to capture a photo
 3. **Add Notes**: Write comments/descriptions for the photo
 4. **Annotate**: Use the photo editor to add drawings and annotations
@@ -97,18 +95,27 @@ When you edit a photo, Fieldmap creates a **new annotated copy** while preservin
 
 ### Architecture
 
-- **Authentication**: Streamlit-native OAuth/OIDC for user identity (no Drive scopes)
-- **Storage**: Google service account for server-to-server Drive access
-- **Organization**: All photos in shared `Fieldmap/<SessionName>/photo_<ID>.png` folder
-- **Access**: Service account has Editor permission on shared "Fieldmap" folder
-- **No Dual OAuth**: Users only authenticate once (for identity, not Drive)
+- **Authentication**: User OAuth for Google Drive access
+- **Storage**: Photos uploaded to user's own Google Drive (no quota issues)
+- **Organization**: All photos in `Fieldmap/<SessionName>/photo_<ID>.png` folder
+- **Access**: User has full control - photos are in their own Drive
+
+### How It Works
+
+1. User signs in with Google OAuth
+2. App requests Drive file creation permissions
+3. App creates/finds "Fieldmap" folder in user's Drive
+4. Session folders are created as subfolders (e.g., "Fieldmap/Default/")
+5. Photos uploaded directly to user's Drive
+6. Thumbnails generated from Drive API
+7. Drag-and-drop updates folder parents in Drive
 
 ### Security Features
 
 - ✅ No credentials in repository
-- ✅ Streamlit native auth with Google OIDC
-- ✅ Service account isolation (only shared folder access)
-- ✅ No user Drive OAuth flow needed
+- ✅ User OAuth with Google OIDC
+- ✅ Photos stored in user's own Drive
+- ✅ Minimal permissions (drive.file scope only)
 - ✅ Secrets managed via Streamlit Cloud or local secrets file
 - ✅ Cookie-based session with secure secrets
 
@@ -132,25 +139,27 @@ Photos are stored with these fields:
     'has_annotations': bool,      # Whether photo is edited
     'source_photo_id': int|None,  # Original photo ID (for derived)
     'variant': str,               # 'original' or 'annotated'
-    'storage_uri': str|None,      # Cloud storage URI
+    'storage_uri': str|None,      # Cloud storage URI (gdrive://file_id)
     'file_id': str|None          # Google Drive file ID
 }
 ```
 
-### Storage Abstraction
+### Storage
 
-All photos are stored in Google Drive using the `GoogleDriveStorage` backend:
+All photos are stored in Google Drive using user OAuth:
 
-- **GoogleDriveStorage**: Save to Google Drive with service account (required)
-- No local storage option available
+- **GoogleDriveStorage**: Save to user's Google Drive with OAuth tokens
+- No local storage option - Drive is mandatory
+- Photos uploaded to user's own Drive (no quota issues)
 
 ### Components
 
 - **SessionStore**: Manages sessions and photo CRUD operations
-- **FieldmapPage**: Camera capture and photo editing
+- **FieldmapPage**: Camera capture and photo editing with MarkerJS 3
 - **GalleryPage**: Photo organization with draggable tiles
-- **AboutPage**: Login gate with Streamlit native auth and app information
-- **GoogleDriveStorage**: Service account-based Drive storage
+- **AboutPage**: Clean sign-in page with Google OAuth
+- **GoogleDriveStorage**: User OAuth-based Drive storage
+- **oauth_utils**: OAuth flow management and token handling
 
 ## 🧪 Testing
 
@@ -193,9 +202,10 @@ fieldmap/
 
 ## 🔐 Security
 
-- **Streamlit Native Auth**: Built-in Google OIDC authentication
-- **Service Account**: Server-to-server Drive access (no user OAuth for storage)
-- **Isolated Access**: Service account only accesses shared "Fieldmap" folder
+- **User OAuth**: Google OAuth 2.0 for Drive access
+- **Drive File Scope**: Minimal permissions (drive.file scope only - app can only access files it creates)
+- **User's Drive**: Photos stored in user's own Drive account
+- **No Service Account**: No quota issues - users upload to their own storage
 - **Cookie-Based Sessions**: Secure session management with secrets
 - **No Plaintext Credentials**: All credentials in Streamlit secrets
 - **Gitignored Secrets**: `.streamlit/secrets.toml` excluded from repo
@@ -208,24 +218,19 @@ All configuration is done via `.streamlit/secrets.toml` (local) or Streamlit Clo
 
 ```toml
 [auth]
-redirect_uri = "https://fieldmap.streamlit.app/oauth2callback"
+redirect_uri = "https://fieldmap.streamlit.app/oauth2callback"  # or http://localhost:8501/oauth2callback for local
 cookie_secret = "<generate-random-secret>"
 client_id = "<oauth-client-id>"
 client_secret = "<oauth-client-secret>"
-server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-# Service account as TOML table (NOT JSON string)
-[google_service_account]
-type = "service_account"
-project_id = "your-project-id"
-private_key_id = "key-id"
-private_key = "-----BEGIN PRIVATE KEY-----\nYOUR_KEY\n-----END PRIVATE KEY-----\n"
-client_email = "your-sa@your-project.iam.gserviceaccount.com"
-client_id = "123456789"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
-auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
+# Optional: Specify an existing Drive folder ID
+# DRIVE_ROOT_FOLDER_ID = "your-folder-id-here"
+```
+
+### Generate cookie_secret
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 ### Streamlit Configuration
@@ -243,9 +248,19 @@ primaryColor = "#4CAF50"
 
 ## 📝 Development
 
-### Adding a New Storage Backend
+### OAuth Callback Page
 
-Google Drive via service account is the only supported backend. To add another:
+The app uses a separate OAuth callback page at `/oauth2callback` to handle Google OAuth redirects:
+
+1. User clicks "Sign in with Google" → Redirects to Google OAuth
+2. User authorizes → Google redirects to `/oauth2callback?code=...`
+3. Callback page exchanges code for tokens
+4. Tokens saved in session state
+5. User redirected back to main app
+
+### Adding Features
+
+To add new storage backends (though Drive is mandatory):
 
 1. Extend `PhotoStorage` abstract class in `storage.py`
 2. Implement `save_image()`, `load_image()`, `delete_image()`
@@ -271,36 +286,30 @@ streamlit run app.py --server.port 80 --server.headless true
 
 ## 🐛 Troubleshooting
 
-**Having signin issues?** Run the diagnostic script:
-
-```bash
-python debug_auth.py
-```
-
-This automated script will diagnose configuration issues and provide specific solutions.
-
 ### Quick Fixes
 
-#### "Service account not configured"
+#### "Failed to initiate sign-in"
 
-Add `[google_service_account]` table to `.streamlit/secrets.toml`. See [docs/SETUP.md](docs/SETUP.md).
+1. Verify `[auth]` section exists in `.streamlit/secrets.toml`
+2. Check `client_id` and `client_secret` are valid
+3. Ensure `redirect_uri` matches your deployment URL:
+   - Local: `http://localhost:8501/oauth2callback`
+   - Production: `https://fieldmap.streamlit.app/oauth2callback`
+4. Verify redirect URI is added to Google Cloud Console OAuth settings
 
-#### "Could not connect to Google Drive"
+#### "Gallery Unavailable"
 
-1. Verify Drive API is enabled in Google Cloud Console
-2. Check service account has Editor access to "Fieldmap" folder
-3. Ensure service account JSON is complete and valid
+After signing in, if Gallery shows as unavailable:
+1. Click "Refresh Page" button
+2. If issue persists, sign out and sign in again
+3. Check browser console (F12) for errors
 
-Run `python debug_auth.py` for detailed diagnostics.
+#### "OAuth state not found"
 
-#### "Login button doesn't appear"
-
-1. Ensure Streamlit >= 1.42.0: `pip install --upgrade streamlit>=1.42.0`
-2. Verify [auth] section in `.streamlit/secrets.toml` is complete
-3. Check redirect_uri matches exactly in Google Cloud Console
-4. Restart the app
-
-Run `python debug_auth.py` for detailed diagnostics.
+This means the OAuth flow was interrupted:
+1. Clear browser cookies
+2. Try signing in again
+3. Ensure cookies are enabled in your browser
 
 #### "Module not found" errors
 
@@ -308,10 +317,26 @@ Run `python debug_auth.py` for detailed diagnostics.
 pip install -r requirements.txt
 ```
 
-### Debugging Tools
+### Google Cloud Console Setup
 
-1. **Automated diagnostics:** `python debug_auth.py`
-2. **Setup guide:** [docs/SETUP.md](docs/SETUP.md)
+1. **Create OAuth 2.0 credentials**:
+   - Go to Google Cloud Console → APIs & Services → Credentials
+   - Click "Create Credentials" → "OAuth 2.0 Client ID"
+   - Application type: "Web application"
+   - Add authorized redirect URIs:
+     - `http://localhost:8501/oauth2callback` (for local dev)
+     - `https://fieldmap.streamlit.app/oauth2callback` (for production)
+   - Save client_id and client_secret to secrets.toml
+
+2. **Enable Drive API**:
+   - Go to APIs & Services → Library
+   - Search for "Google Drive API"
+   - Click "Enable"
+
+3. **Configure OAuth consent screen**:
+   - Go to APIs & Services → OAuth consent screen
+   - Add your email as a test user (if in testing mode)
+   - Configure app name, support email, etc.
 
 ## 🤝 Contributing
 
@@ -340,22 +365,23 @@ For issues or questions:
 
 1. Check [docs/SETUP.md](docs/SETUP.md) for complete setup instructions
 2. Review troubleshooting section above
-3. Open an issue on GitHub
+3. Check browser console (F12) for error messages
+4. Open an issue on GitHub
 
 ## 🗺️ Roadmap
 
 Future enhancements:
 
-- [ ] Role-based access control using st.user.email
+- [ ] Shared folders for team collaboration
 - [ ] Multi-device photo sync (already supported via Drive)
-- [ ] Collaborative sessions with sharing
 - [ ] Advanced search and filtering
 - [ ] Batch operations
 - [ ] Photo comparison view
 - [ ] Export to PDF with annotations
+- [ ] Mobile app (PWA)
 
 ---
 
-**Version**: 4.0 (Streamlit Native Auth + Service Account)  
+**Version**: 5.0 (User OAuth + Drive API)  
 **Last Updated**: 2024-12-16  
 **Maintained by**: romainejg

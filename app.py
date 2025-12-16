@@ -1,7 +1,7 @@
 """
 Fieldmap - Cadaver Lab Photo Annotation App
 A Streamlit-based mobile web app for biomedical engineers to capture, annotate, and organize photos
-Uses Streamlit-native OAuth/OIDC flow with Google service account for Drive storage
+Uses Google Drive with user OAuth for storage (no service account quota issues)
 """
 
 import base64
@@ -20,6 +20,14 @@ from streamlit_sortables import sort_items
 
 from components.photo_editor import photo_editor, decode_image_from_dataurl
 from storage import GoogleDriveStorage
+from oauth_utils import (
+    is_authenticated,
+    get_user_email,
+    get_user_name,
+    get_user_credentials,
+    get_authorization_url,
+    logout
+)
 
 # Configure comprehensive logging
 logging.basicConfig(
@@ -32,14 +40,6 @@ logger = logging.getLogger(__name__)
 logger.info("="*80)
 logger.info("Fieldmap Application Starting")
 logger.info("="*80)
-
-# Diagnostic: Log count of secret keys at startup (avoid exposing sensitive key names)
-# Detailed key names will be logged only when get_service_account_info() is called
-try:
-    secret_count = len(list(st.secrets.keys()))
-    logger.info(f"Startup diagnostic - Found {secret_count} secret key(s) in st.secrets")
-except Exception as e:
-    logger.error(f"Failed to access st.secrets during startup diagnostic: {e}")
 
 
 
@@ -150,125 +150,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-
-def log_available_secret_keys():
-    """
-    Log available secret keys for diagnostic purposes (keys only, not values).
-    
-    Helps diagnose configuration issues by showing what secrets are available.
-    """
-    try:
-        available_keys = list(st.secrets.keys())
-        logger.info(f"Available secret keys in st.secrets: {available_keys}")
-        if "google_service_account" in st.secrets:
-            logger.info("✓ google_service_account is present in st.secrets")
-        else:
-            logger.error("✗ google_service_account is MISSING from st.secrets")
-            logger.error(f"   Available keys: {available_keys}")
-        return available_keys
-    except Exception as e:
-        logger.error(f"Failed to access st.secrets during diagnostic check: {e}")
-        return []
-
-
-def get_service_account_info():
-    """
-    Get Google service account credentials from secrets.
-    
-    Expects service account to be configured as a TOML table in secrets:
-        [google_service_account]
-        type = "service_account"
-        project_id = "..."
-        ...
-    
-    Returns:
-        dict: Service account info dict ready for Credentials.from_service_account_info()
-        None: If service account is not configured (gracefully returns None without crashing)
-    """
-    available_keys = []
-    try:
-        # Get available keys for diagnostic purposes (only when needed)
-        available_keys = log_available_secret_keys()
-        
-        # Try to get service account from TOML table (new format)
-        if "google_service_account" in st.secrets:
-            service_account_dict = dict(st.secrets["google_service_account"])
-            logger.info("Service account found in secrets (TOML table format)")
-            logger.info(f"Service account email: {service_account_dict.get('client_email', 'N/A')}")
-            return service_account_dict
-        
-        # Log warning if not found
-        logger.warning("google_service_account is missing from Streamlit secrets.")
-        logger.info(f"Available secret keys: {available_keys}")
-        logger.info("Please add [google_service_account] table to your secrets:")
-        logger.info("  - Streamlit Cloud: Settings > Secrets")
-        logger.info("  - Local development: .streamlit/secrets.toml")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Failed to load service account info: {e}", exc_info=True)
-        return None
-
-
-def check_auth_configuration():
-    """
-    Check if authentication is properly configured.
-    
-    Returns:
-        tuple: (is_configured, issues_list)
-    """
-    issues = []
-    
-    logger.info("Checking authentication configuration...")
-    
-    # Check for [auth] section
-    try:
-        if "auth" not in st.secrets:
-            issues.append("[auth] section missing in secrets.toml")
-            logger.error("[auth] section not found in secrets")
-        else:
-            auth_config = st.secrets["auth"]
-            logger.info("[auth] section found in secrets")
-            
-            # Check required fields
-            required_fields = ['client_id', 'client_secret', 'redirect_uri', 'cookie_secret', 'server_metadata_url']
-            for field in required_fields:
-                if field not in auth_config or not auth_config.get(field):
-                    issues.append(f"[auth].{field} is missing or empty")
-                    logger.error(f"[auth].{field} is missing or empty")
-                else:
-                    logger.info(f"[auth].{field} is configured")
-                    
-                    # Log partial values for verification (not full secrets)
-                    if field == 'redirect_uri':
-                        logger.info(f"  redirect_uri: {auth_config[field]}")
-                    elif field == 'client_id':
-                        logger.info(f"  client_id: {auth_config[field][:30]}...")
-                    elif field == 'cookie_secret':
-                        logger.info(f"  cookie_secret length: {len(auth_config[field])} chars")
-    except Exception as e:
-        issues.append(f"Error accessing secrets: {str(e)}")
-        logger.error(f"Error accessing secrets: {e}", exc_info=True)
-    
-    # Check service account (don't raise, just check)
-    service_account = get_service_account_info()
-    if not service_account:
-        issues.append("google_service_account is missing or invalid")
-        logger.error("Service account configuration is missing or invalid")
-    else:
-        logger.info("Service account configuration validated")
-    
-    is_configured = len(issues) == 0
-    
-    if is_configured:
-        logger.info("✓ All authentication configuration checks passed")
-    else:
-        logger.error(f"✗ Found {len(issues)} configuration issue(s):")
-        for issue in issues:
-            logger.error(f"  - {issue}")
-    
-    return is_configured, issues
 
 
 class SessionStore:
@@ -755,16 +636,10 @@ class GalleryPage(BasePage):
         
         # Check if Drive storage is available
         if not self.session_store.storage:
-            st.error("⚠️ **Gallery Disabled**")
-            st.info("Google Drive storage is not configured. Gallery requires Drive to be set up.")
-            st.markdown("""
-            **To enable Gallery:**
-            1. Add `[google_service_account]` table to your `.streamlit/secrets.toml`
-            2. Ensure the service account has access to the 'Fieldmap' Drive folder
-            3. Restart the app
-            
-            See the About page for detailed setup instructions.
-            """)
+            st.error("⚠️ **Gallery Unavailable**")
+            st.info("Google Drive storage is not initialized. This may happen if you just signed in. Please refresh the page.")
+            if st.button("Refresh Page", type="primary"):
+                st.rerun()
             return
         
         view_session = st.selectbox(
@@ -812,8 +687,9 @@ class GalleryPage(BasePage):
                     photo['thumb_data_url'] = thumb_url
                 
                 variant_badge = "📝 " if photo.get('variant') == 'annotated' else ""
-                item_html = f'''<div style="text-align:center;">
-                    <img src="{thumb_url}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;" />
+                # Add a data attribute to store photo info for click handling
+                item_html = f'''<div style="text-align:center;" data-photo-id="{photo['id']}" data-session="{session_name}">
+                    <img src="{thumb_url}" style="width:84px;height:84px;object-fit:cover;border-radius:4px;cursor:pointer;" />
                     <div style="font-size:10px;margin-top:2px;">{variant_badge}#{int(photo['id'])}</div>
                 </div>'''
                 
@@ -882,6 +758,7 @@ class GalleryPage(BasePage):
         if sorted_containers != sortable_containers:
             new_structure = {}
             changes_made = False
+            move_operations = []  # Track files that need to be moved in Drive
             
             for idx, container in enumerate(sorted_containers):
                 if idx < len(session_name_map):
@@ -893,10 +770,22 @@ class GalleryPage(BasePage):
                 for item_id in container["items"]:
                     if item_id in original_structure:
                         photo_info = original_structure[item_id]
-                        new_photos.append(photo_info['photo'])
+                        photo = photo_info['photo']
+                        original_session = photo_info['session']
+                        
+                        new_photos.append(photo)
+                        
+                        # Check if photo moved to a different session
+                        if original_session != session_name and photo.get('file_id'):
+                            move_operations.append({
+                                'file_id': photo['file_id'],
+                                'from_session': original_session,
+                                'to_session': session_name
+                            })
                 
                 new_structure[session_name] = new_photos
             
+            # Update in-memory structure
             for session_name, photos in new_structure.items():
                 if session_name not in st.session_state.sessions:
                     st.session_state.sessions[session_name] = []
@@ -905,54 +794,46 @@ class GalleryPage(BasePage):
                     st.session_state.sessions[session_name] = photos
                     changes_made = True
             
+            # Update Drive folder parents if storage is available
+            if self.session_store.storage and move_operations:
+                for move_op in move_operations:
+                    try:
+                        success = self.session_store.storage.move_image(
+                            move_op['file_id'],
+                            move_op['from_session'],
+                            move_op['to_session']
+                        )
+                        if success:
+                            logger.info(f"Moved photo in Drive: {move_op['file_id']} from {move_op['from_session']} to {move_op['to_session']}")
+                    except Exception as e:
+                        logger.error(f"Failed to move photo in Drive: {e}")
+                        st.error(f"⚠️ Failed to update Drive folder for some photos. Changes saved locally.")
+            
             if changes_made:
-                st.success("✓ Photos reorganized!")
+                st.success("✓ Photos reorganized!" + (" Drive folders updated." if move_operations else ""))
                 st.rerun()
         
+        # Add selection buttons for viewing details
         st.divider()
-        st.markdown("**Select a photo to view details:**")
+        st.markdown("**Click a photo to view details:**")
         
-        all_photos = []
+        # Group photos by session for display
         for session_name in sorted(self.session_store.sessions.keys()):
-            for photo in self.session_store.sessions[session_name]:
-                all_photos.append((session_name, photo))
+            photos = self.session_store.sessions[session_name]
+            if photos:
+                st.markdown(f"**📁 {session_name}**")
+                cols = st.columns(min(len(photos), 8))
+                for idx, photo in enumerate(photos):
+                    with cols[idx % 8]:
+                        variant_icon = "📝" if photo.get('variant') == 'annotated' else "📷"
+                        if st.button(f"{variant_icon} #{photo['id']}", key=f"view_{photo['id']}", use_container_width=True):
+                            st.session_state['gallery_selected'] = {
+                                'photo_id': photo['id'],
+                                'session': session_name
+                            }
+                            st.rerun()
         
-        if all_photos:
-            cols_per_row = 8
-            for i in range(0, len(all_photos), cols_per_row):
-                cols = st.columns(cols_per_row)
-                for j in range(cols_per_row):
-                    if i + j < len(all_photos):
-                        session_name, photo = all_photos[i + j]
-                        with cols[j]:
-                            if 'thumb_data_url' not in photo or not photo['thumb_data_url']:
-                                thumb = photo.get('thumbnail')
-                                if not thumb:
-                                    thumb = photo['current_image'].copy()
-                                    thumb.thumbnail((100, 100), Image.Resampling.LANCZOS)
-                                    photo['thumbnail'] = thumb
-                                
-                                thumb_buffer = io.BytesIO()
-                                thumb.save(thumb_buffer, format='PNG')
-                                thumb_buffer.seek(0)
-                                thumb_base64 = base64.b64encode(thumb_buffer.getvalue()).decode()
-                                photo['thumb_data_url'] = f"data:image/png;base64,{thumb_base64}"
-                            
-                            st.markdown(
-                                f'<img src="{photo["thumb_data_url"]}" style="width:100%;border-radius:4px;cursor:pointer;" />',
-                                unsafe_allow_html=True
-                            )
-                            
-                            variant_badge = "📝" if photo.get('variant') == 'annotated' else ""
-                            button_label = f"{variant_badge}#{photo['id']}" if variant_badge else f"#{photo['id']}"
-                            
-                            if st.button(button_label, key=f"select_{photo['id']}", use_container_width=True):
-                                st.session_state['gallery_selected'] = {
-                                    'photo_id': photo['id'],
-                                    'session': session_name
-                                }
-                                st.rerun()
-        
+        # Handle tile click for details
         if st.session_state.get('gallery_selected'):
             selected_info = st.session_state['gallery_selected']
             selected_photo = self.session_store.get_photo(
@@ -960,6 +841,7 @@ class GalleryPage(BasePage):
                 selected_info['session']
             )
             if selected_photo:
+                st.divider()
                 with st.expander("📸 Photo Details", expanded=True):
                     self._render_photo_details(selected_photo, selected_info['session'])
     
@@ -1112,27 +994,31 @@ class AboutPage(BasePage):
     """About page with app information and authentication"""
     
     def render(self):
+        # No header on About page per requirements
+        
         st.markdown("""
         <style>
-            .hero-header {
-                text-align: center;
-                margin-bottom: 2rem;
-            }
-            .hero-header img {
-                max-width: 300px;
+            .hero-container {
+                max-width: 1200px;
                 margin: 0 auto;
+                padding: 2rem 1rem;
             }
             .hero-title {
                 font-size: 3rem;
                 font-weight: 700;
-                margin-top: 1rem;
                 margin-bottom: 0.5rem;
                 color: #1f1f1f;
+            }
+            .hero-greeting {
+                font-size: 2rem;
+                color: #666;
+                margin-bottom: 0.5rem;
             }
             .hero-subtitle {
                 font-size: 1.2rem;
                 color: #666;
                 margin-bottom: 2rem;
+                line-height: 1.6;
             }
             .feature-list {
                 font-size: 1.1rem;
@@ -1142,26 +1028,20 @@ class AboutPage(BasePage):
             .feature-list li {
                 margin-bottom: 0.5rem;
             }
-            .signin-card {
-                background-color: #f8f9fa;
-                border: 2px solid #e0e0e0;
-                border-radius: 12px;
-                padding: 2rem;
+            .signin-button {
                 margin-top: 2rem;
-                text-align: center;
-            }
-            .signin-card h3 {
-                margin-top: 0;
-                margin-bottom: 1rem;
-                color: #1f1f1f;
             }
             .hero-image {
                 border-radius: 12px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                margin-top: 2rem;
             }
             @media (max-width: 768px) {
                 .hero-title {
                     font-size: 2rem;
+                }
+                .hero-greeting {
+                    font-size: 1.5rem;
                 }
                 .hero-subtitle {
                     font-size: 1rem;
@@ -1170,239 +1050,80 @@ class AboutPage(BasePage):
         </style>
         """, unsafe_allow_html=True)
         
-        # Header with logo
-        st.markdown('<div class="hero-header">', unsafe_allow_html=True)
-        try:
-            logo_path = Path(__file__).parent / "assets" / "logo.png"
-            if logo_path.exists():
-                logo_image = Image.open(logo_path)
-                st.image(logo_image, width=250)
-        except Exception:
-            pass
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Check authentication status
+        user_authenticated = is_authenticated()
+        user_email = get_user_email()
         
         col_left, col_right = st.columns([1.2, 1])
         
         with col_left:
-            st.markdown('<div style="font-size: 3rem; color: #666; margin-bottom: 0.5rem;">Hello!</div>', unsafe_allow_html=True)
+            # Logo
+            try:
+                logo_path = Path(__file__).parent / "assets" / "logo.png"
+                if logo_path.exists():
+                    logo_image = Image.open(logo_path)
+                    st.image(logo_image, width=250)
+            except Exception:
+                pass
+            
+            st.markdown('<div class="hero-greeting">Hello!</div>', unsafe_allow_html=True)
             st.markdown('<div class="hero-title">Welcome to Fieldmap.</div>', unsafe_allow_html=True)
             
             st.markdown("""
+            <div class="hero-subtitle">
+            A non-profit app to assist biomedical engineers with lab efficiency and documentation.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Feature bullets
+            st.markdown("""
             <div class="feature-list">
-            <ul style="list-style-type: none; padding-left: 0;">
-            A non-profit app to assist biomedical engineers with lab efficiency and documentation. Capture and organize photos, annotate images, and sync automatically to Google Drive.
+            <ul style="list-style-type: disc; padding-left: 1.5rem;">
+                <li>📸 Capture and annotate photos directly in your browser</li>
+                <li>📁 Organize images into sessions (albums)</li>
+                <li>☁️ Auto-sync to your Google Drive</li>
+                <li>✏️ Edits create new copies, originals stay untouched</li>
+                <li>🔐 Secure, private storage in your own Drive</li>
             </ul>
             </div>
             """, unsafe_allow_html=True)
             
-            st.markdown('<div class="signin-card">', unsafe_allow_html=True)
-            
-            # Check if user is logged in using Streamlit's native auth
-            # In Streamlit 1.42+, when [auth] is configured in secrets.toml,
-            # user info is available via st.user
-            user_authenticated = False
-            user_email = None
-            auth_method = None
-            
-            # Try to get user info from Streamlit's native auth
-            try:
-                # Streamlit 1.42+ provides st.user when auth is configured
-                if hasattr(st, 'user'):
-                    user_info = st.user
-                    logger.info(f"st.user exists: {user_info}")
-                    if user_info and user_info.get('email'):
-                        user_authenticated = True
-                        user_email = user_info.get('email')
-                        auth_method = "st.user"
-                        logger.info(f"User authenticated via st.user: {user_email}")
-                    else:
-                        logger.info("st.user exists but no email found")
-                else:
-                    logger.warning("st.user not available")
-            except Exception as e:
-                logger.error(f"Error checking Streamlit auth: {e}", exc_info=True)
-            
-            # Fallback: check manual session state for compatibility
-            if not user_authenticated:
-                user_authenticated = st.session_state.get("logged_in", False)
-                if user_authenticated:
-                    user_info = st.session_state.get("user_info", {})
-                    user_email = user_info.get("email", "Unknown")
-                    auth_method = "manual_session_state"
-                    logger.info(f"User authenticated via manual session state: {user_email}")
-                else:
-                    logger.info("User not authenticated via any method")
+            # Authentication section
+            st.markdown('<div class="signin-button">', unsafe_allow_html=True)
             
             if user_authenticated:
-                # User is authenticated
-                st.markdown("### ✅ Signed In")
-                st.success(f"Signed in as **{user_email}**")
+                # User is signed in
+                st.success(f"✅ Signed in as **{user_email}**")
+                st.info("📱 Use the sidebar to access Fieldmap and Gallery")
                 
-                st.info("📱 Access Fieldmap and Gallery from the sidebar")
-                
-                # For Streamlit native auth, logout is typically handled via st.experimental_rerun
-                # or by having user clear cookies
                 if st.button("Sign Out", key="signout_btn", type="secondary", use_container_width=True):
-                    # Clear manual session state (if used)
-                    st.session_state["logged_in"] = False
-                    st.session_state.pop("user_info", None)
-                    st.info("Please clear your browser cookies to fully sign out.")
+                    logout()
                     st.rerun()
             else:
-                # User is not authenticated - show sign-in
-                st.markdown("### Sign In")
-                st.markdown("Sign in with Google to access Fieldmap")
+                # User is not signed in
+                st.markdown("### Sign in with Google")
+                st.markdown("Click below to sign in and start using Fieldmap")
                 
-                # Run configuration check
-                auth_configured, config_issues = check_auth_configuration()
-                
-                if not auth_configured:
-                    st.error("⚠️ **Authentication Configuration Issues Detected**")
-                    st.markdown("**Issues found:**")
-                    for issue in config_issues:
-                        st.markdown(f"- {issue}")
-                    
-                    st.divider()
-                    
-                    with st.expander("📋 Detailed Setup Instructions", expanded=True):
-                        st.markdown("""
-                        **Required secrets in `.streamlit/secrets.toml`:**
+                if st.button("🔐 Sign in with Google", key="signin_btn", type="primary", use_container_width=True):
+                    # Generate authorization URL and redirect
+                    try:
+                        auth_url, state = get_authorization_url()
                         
-                        ```toml
-                        [auth]
-                        redirect_uri = "https://fieldmap.streamlit.app/oauth2callback"
-                        cookie_secret = "<generate a long random secret>"
-                        client_id = "<Google Web OAuth client_id>"
-                        client_secret = "<Google Web OAuth client_secret>"
-                        server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+                        # Store state in session for CSRF protection
+                        st.session_state["oauth_state"] = state
                         
-                        # Service account as TOML table (NOT JSON string)
-                        [google_service_account]
-                        type = "service_account"
-                        project_id = "your-project-id"
-                        private_key_id = "key-id"
-                        private_key = "-----BEGIN PRIVATE KEY-----\\nYOUR_KEY\\n-----END PRIVATE KEY-----\\n"
-                        client_email = "your-sa@your-project.iam.gserviceaccount.com"
-                        client_id = "123456789"
-                        auth_uri = "https://accounts.google.com/o/oauth2/auth"
-                        token_uri = "https://oauth2.googleapis.com/token"
-                        auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-                        client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
-                        ```
+                        # Redirect to Google OAuth
+                        st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}" />', unsafe_allow_html=True)
+                        st.info("Redirecting to Google sign-in...")
                         
-                        **To generate cookie_secret:**
-                        ```bash
-                        python -c "import secrets; print(secrets.token_urlsafe(32))"
-                        ```
-                        
-                        See [docs/SETUP.md](https://github.com/romainejg/fieldmap/blob/main/docs/SETUP.md) for complete setup instructions.
-                        """)
-                    
-                    with st.expander("🔧 Debugging Tools"):
-                        st.markdown("""
-                        **Run the debugging script:**
-                        
-                        ```bash
-                        python debug_auth.py
-                        ```
-                        
-                        This script will:
-                        - Validate your secrets.toml configuration
-                        - Check Streamlit version compatibility
-                        - Test Google Drive service account connection
-                        - Verify OAuth endpoint accessibility
-                        - Provide detailed diagnostic information
-                        
-                        **Common Issues:**
-                        
-                        1. **Missing secrets.toml**: Copy from template
-                           ```bash
-                           cp .streamlit/secrets.toml.template .streamlit/secrets.toml
-                           ```
-                        
-                        2. **Placeholder values**: Replace all `<...>` placeholders with actual values
-                        
-                        3. **Wrong redirect_uri**: Must match exactly in Google Cloud Console OAuth settings
-                           - Local: `http://localhost:8501/oauth2callback`
-                           - Production: `https://fieldmap.streamlit.app/oauth2callback`
-                        
-                        4. **Service account not shared**: Share "Fieldmap" Drive folder with service account email
-                        
-                        5. **Old Streamlit version**: Ensure >= 1.42.0
-                           ```bash
-                           pip install --upgrade 'streamlit>=1.42.0'
-                           ```
-                        """)
-                else:
-                    # Configuration is valid
-                    st.success("✓ Configuration appears valid")
-                    
-                    st.markdown("""
-                    **How to sign in:**
-                    
-                    Streamlit's native authentication should automatically add a **"Log in"** button to the UI.
-                    Look for it in the **top-right corner** of the page.
-                    """)
-                    
-                    # Show debugging info in expander
-                    with st.expander("🔍 Debug Information"):
-                        import streamlit as st_module
-                        st.markdown(f"**Streamlit Version:** {st_module.__version__}")
-                        
-                        st.markdown("**Authentication Attributes:**")
-                        st.markdown(f"- `hasattr(st, 'user')`: {hasattr(st, 'user')}")
-                        
-                        if hasattr(st, 'user'):
-                            try:
-                                user_info = st.user
-                                st.markdown(f"- `st.user`: {user_info}")
-                            except Exception as e:
-                                st.markdown(f"- `st.user` error: {e}")
-                        
-                        st.markdown("**Secrets Check:**")
-                        try:
-                            auth_present = "auth" in st.secrets
-                            st.markdown(f"- `'auth' in st.secrets`: {auth_present}")
-                            if auth_present:
-                                st.markdown(f"- `client_id present`: {bool(st.secrets['auth'].get('client_id'))}")
-                                st.markdown(f"- `client_secret present`: {bool(st.secrets['auth'].get('client_secret'))}")
-                                st.markdown(f"- `redirect_uri`: {st.secrets['auth'].get('redirect_uri', 'N/A')}")
-                        except Exception as e:
-                            st.markdown(f"- Error checking secrets: {e}")
-                        
-                        st.markdown("**Service Account:**")
-                        service_account_info = get_service_account_info()
-                        if service_account_info:
-                            st.markdown(f"- Service account email: {service_account_info.get('client_email', 'N/A')}")
-                            st.markdown(f"- Project ID: {service_account_info.get('project_id', 'N/A')}")
-                        else:
-                            st.markdown("- Service account: Not configured")
-                        
-                        st.divider()
-                        st.markdown("""
-                        **Troubleshooting Steps:**
-                        
-                        1. Run the diagnostic script: `python debug_auth.py`
-                        2. Check browser console (F12) for JavaScript errors
-                        3. Verify redirect_uri in Google Cloud Console matches exactly
-                        4. Clear browser cookies and cache
-                        5. Try in incognito/private browsing mode
-                        6. Check that OAuth consent screen is configured in Google Cloud
-                        7. Ensure you're added as a test user (if app is in testing mode)
-                        """)
-                    
-                    # Provide manual fallback for testing/development
-                    st.divider()
-                    if st.button("Manual Login (Dev Only)", key="manual_signin_btn", type="secondary", use_container_width=True):
-                        st.warning("⚠️ This is a development-only manual login. In production, use Streamlit's native auth.")
-                        # Simulate login for development
-                        st.session_state["logged_in"] = True
-                        st.session_state["user_info"] = {"email": "test@example.com"}
-                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Failed to initiate sign-in: {str(e)}")
+                        logger.error(f"OAuth initialization failed: {e}", exc_info=True)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col_right:
+            # Hero image
             try:
                 hero_path = Path(__file__).parent / "assets" / "biomedical.jpg"
                 if hero_path.exists():
@@ -1410,8 +1131,8 @@ class AboutPage(BasePage):
                     st.markdown('<div class="hero-image">', unsafe_allow_html=True)
                     st.image(hero_image, use_column_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to load hero image: {e}")
 
 
 class App:
@@ -1420,31 +1141,33 @@ class App:
     def __init__(self):
         logger.info("Initializing Fieldmap application")
         
-        # Initialize storage backend with service account
+        # Initialize storage backend with user OAuth credentials
         storage_backend = None
-        service_account_info = get_service_account_info()
         
-        if service_account_info:
-            try:
-                logger.info("Attempting to initialize Google Drive storage...")
-                storage_backend = GoogleDriveStorage(service_account_info)
-                logger.info("✓ Google Drive storage (service account) initialized successfully")
-                
-                # Test connection using public method
+        if is_authenticated():
+            user_credentials = get_user_credentials()
+            
+            if user_credentials:
                 try:
-                    storage_backend.test_connection()
-                    logger.info("✓ Successfully connected to Google Drive API")
+                    logger.info("Attempting to initialize Google Drive storage with user OAuth...")
+                    storage_backend = GoogleDriveStorage(user_credentials)
+                    logger.info("✓ Google Drive storage (user OAuth) initialized successfully")
+                    
+                    # Test connection
+                    try:
+                        storage_backend.test_connection()
+                        logger.info("✓ Successfully connected to Google Drive API")
+                    except Exception as e:
+                        logger.error(f"✗ Failed to connect to Google Drive API: {e}", exc_info=True)
+                        logger.warning("⚠️ Drive storage may be unavailable")
+                        storage_backend = None
                 except Exception as e:
-                    logger.error(f"✗ Failed to connect to Google Drive API: {e}", exc_info=True)
-                    logger.warning("⚠️ Gallery will be disabled - Drive connection failed")
+                    logger.error(f"✗ Failed to initialize Google Drive storage: {e}", exc_info=True)
                     storage_backend = None
-            except Exception as e:
-                logger.error(f"✗ Failed to initialize Google Drive storage: {e}", exc_info=True)
-                logger.warning("⚠️ Gallery will be disabled - storage initialization failed")
-                storage_backend = None
+            else:
+                logger.warning("⚠️ User credentials not available")
         else:
-            logger.warning("⚠️ Service account not configured - Gallery will be disabled")
-            logger.info("To enable Gallery, add [google_service_account] to secrets.toml")
+            logger.info("User not authenticated - Drive storage will be initialized after sign-in")
         
         self.session_store = SessionStore(storage_backend=storage_backend)
         self.pages = {
@@ -1472,23 +1195,12 @@ class App:
             st.markdown('<div class="sidebar-title">Fieldmap</div>', unsafe_allow_html=True)
             st.markdown('<div class="sidebar-subtitle">Documentation support for the cadaver lab.</div>', unsafe_allow_html=True)
             
-            # Check if user is authenticated using Streamlit's native auth or fallback
-            is_authenticated = False
-            try:
-                if hasattr(st, 'user'):
-                    user_info = st.user
-                    if user_info and user_info.get('email'):
-                        is_authenticated = True
-            except Exception:
-                pass
-            
-            # Fallback: check manual session state
-            if not is_authenticated:
-                is_authenticated = st.session_state.get("logged_in", False)
+            # Check if user is authenticated
+            user_is_authenticated = is_authenticated()
             
             st.markdown('<div class="sidebar-section-label">Sections</div>', unsafe_allow_html=True)
             
-            if not is_authenticated:
+            if not user_is_authenticated:
                 st.info("Please sign in on the About page to access Fieldmap and Gallery.")
                 current_index = 0
                 selected_page = st.radio(
@@ -1512,24 +1224,11 @@ class App:
     
     def run(self):
         """Main application entry point"""
-        # Check authentication status using Streamlit's native auth or fallback
-        is_authenticated = False
-        
-        # Try to get user info from Streamlit's native auth
-        try:
-            if hasattr(st, 'user'):
-                user_info = st.user
-                if user_info and user_info.get('email'):
-                    is_authenticated = True
-        except Exception:
-            pass
-        
-        # Fallback: check manual session state
-        if not is_authenticated:
-            is_authenticated = st.session_state.get("logged_in", False)
+        # Check authentication status
+        user_is_authenticated = is_authenticated()
         
         # Implement navigation gating: force About page if not authenticated
-        if not is_authenticated:
+        if not user_is_authenticated:
             if self.session_store.current_page != 'About':
                 self.session_store.current_page = 'About'
         
