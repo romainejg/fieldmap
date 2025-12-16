@@ -102,8 +102,8 @@ def test_state_expiry():
     signed_state = serializer.dumps(state_payload)
     
     print(f"Generated signed state: {signed_state[:40]}...")
-    print("Waiting 2 seconds...")
-    time.sleep(2)
+    print("Waiting 1.1 seconds...")
+    time.sleep(1.1)
     
     # Try to verify with max_age=1 second (should fail)
     from itsdangerous import SignatureExpired

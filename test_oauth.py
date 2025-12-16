@@ -47,6 +47,14 @@ st = MockStreamlit()
 # Now import our module
 import google_oauth
 
+
+def cleanup_env_vars(*keys):
+    """Helper function to safely cleanup environment variables"""
+    for key in keys:
+        if key in os.environ:
+            del os.environ[key]
+
+
 def test_config_functions():
     """Test configuration retrieval functions"""
     print("\n=== Testing Configuration Functions ===")
@@ -78,9 +86,7 @@ def test_config_functions():
     print("✓ get_redirect_uri() returns APP_BASE_URL")
     
     # Cleanup
-    for key in ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL']:
-        if key in os.environ:
-            del os.environ[key]
+    cleanup_env_vars('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL')
 
 def test_auth_url_generation():
     """Test auth URL generation with signed state tokens"""
@@ -134,9 +140,7 @@ def test_auth_url_generation():
     # Cleanup
     st.session_state.clear()
     st.query_params.clear()
-    for key in ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL', 'OAUTH_STATE_SECRET']:
-        if key in os.environ:
-            del os.environ[key]
+    cleanup_env_vars('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'APP_BASE_URL', 'OAUTH_STATE_SECRET')
 
 def test_authentication_check():
     """Test authentication status check"""

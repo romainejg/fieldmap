@@ -36,6 +36,11 @@ def get_oauth_state_secret() -> str:
     In production, OAUTH_STATE_SECRET MUST be set explicitly.
     In development, falls back to a random secret (won't work across restarts).
     
+    The secret should be a URL-safe base64 string of at least 32 bytes.
+    
+    Example secret generation:
+        python -c "import secrets; print(secrets.token_urlsafe(32))"
+    
     Returns:
         Secret key string for signing OAuth state tokens
     """
@@ -55,11 +60,11 @@ def get_oauth_state_secret() -> str:
         # For development only: generate a random secret
         # WARNING: This secret changes on each app restart, breaking OAuth flows
         # For production, ALWAYS set OAUTH_STATE_SECRET explicitly
-        logger.warning("="*60)
-        logger.warning("OAUTH_STATE_SECRET not set - generating dev-only random secret")
-        logger.warning("For production, set OAUTH_STATE_SECRET environment variable")
-        logger.warning("Dev secret will change on restart, breaking active OAuth flows")
-        logger.warning("="*60)
+        logger.error("="*60)
+        logger.error("OAUTH_STATE_SECRET not set - generating dev-only random secret")
+        logger.error("For production, set OAUTH_STATE_SECRET environment variable")
+        logger.error("Dev secret will change on restart, breaking active OAuth flows")
+        logger.error("="*60)
         secret = secrets.token_urlsafe(32)
     
     return secret
