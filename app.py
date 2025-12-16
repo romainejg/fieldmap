@@ -32,17 +32,13 @@ logger.info("="*80)
 logger.info("Fieldmap Application Starting")
 logger.info("="*80)
 
-# Diagnostic: Log available secret keys (for debugging missing GOOGLE_SERVICE_ACCOUNT_JSON)
+# Diagnostic: Log available secret keys at startup (for debugging missing GOOGLE_SERVICE_ACCOUNT_JSON)
+# This will be called again in get_service_account_info() with more details
 try:
     available_secret_keys = list(st.secrets.keys())
-    logger.info(f"Available secret keys in st.secrets: {available_secret_keys}")
-    if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
-        logger.info("✓ GOOGLE_SERVICE_ACCOUNT_JSON is present in st.secrets")
-    else:
-        logger.error("✗ GOOGLE_SERVICE_ACCOUNT_JSON is MISSING from st.secrets")
-        logger.error(f"   Available keys: {available_secret_keys}")
+    logger.info(f"Startup diagnostic - Available secret keys: {available_secret_keys}")
 except Exception as e:
-    logger.error(f"Failed to access st.secrets during diagnostic check: {e}")
+    logger.error(f"Failed to access st.secrets during startup diagnostic: {e}")
 
 
 def parse_service_account_json(sa_json):
@@ -170,34 +166,40 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def log_available_secret_keys():
+    """Log available secret keys for diagnostic purposes (keys only, not values)"""
+    try:
+        available_keys = list(st.secrets.keys())
+        logger.info(f"Available secret keys in st.secrets: {available_keys}")
+        if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
+            logger.info("✓ GOOGLE_SERVICE_ACCOUNT_JSON is present in st.secrets")
+        else:
+            logger.error("✗ GOOGLE_SERVICE_ACCOUNT_JSON is MISSING from st.secrets")
+            logger.error(f"   Available keys: {available_keys}")
+        return available_keys
+    except Exception as e:
+        logger.error(f"Failed to access st.secrets during diagnostic check: {e}")
+        return []
+
+
 def get_service_account_info():
     """
     Get Google service account credentials from secrets.
     
     Returns:
         dict: Service account info or None if not configured
+        
+    Raises:
+        KeyError: If GOOGLE_SERVICE_ACCOUNT_JSON is missing from secrets
     """
     try:
-        # Log available secret keys for diagnostic purposes (keys only, not values)
-        available_keys = list(st.secrets.keys())
-        logger.info(f"Available secret keys: {available_keys}")
-        
-        # Check if GOOGLE_SERVICE_ACCOUNT_JSON exists (case-sensitive, exact match)
-        if "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
-            logger.info("GOOGLE_SERVICE_ACCOUNT_JSON key found in st.secrets")
-        else:
-            logger.error("GOOGLE_SERVICE_ACCOUNT_JSON key NOT found in st.secrets")
-            logger.error(f"Available keys are: {available_keys}")
-            raise KeyError(
-                f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets. "
-                f"Available secret keys: {available_keys}. "
-                f"Please ensure you have added GOOGLE_SERVICE_ACCOUNT_JSON to your secrets configuration "
-                f"in Streamlit Cloud (Settings > Secrets) or in .streamlit/secrets.toml for local development. "
-                f"The key name is case-sensitive and must be exactly 'GOOGLE_SERVICE_ACCOUNT_JSON'."
-            )
+        # Get available keys for diagnostic purposes
+        available_keys = log_available_secret_keys()
         
         # Try to get service account JSON from secrets (exact key match, case-sensitive)
+        # This will raise KeyError if the key doesn't exist
         service_account_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+        
         if service_account_json:
             logger.info("Service account JSON found in secrets")
             if isinstance(service_account_json, str):
@@ -212,12 +214,23 @@ def get_service_account_info():
             return service_account_json
         else:
             logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON is present but empty")
-    except KeyError as e:
-        # Re-raise KeyError with diagnostic information
-        raise
+            return None
+    except KeyError:
+        # Key doesn't exist - provide detailed error message
+        available_keys = list(st.secrets.keys()) if hasattr(st, 'secrets') else []
+        error_msg = (
+            f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets. "
+            f"Available secret keys: {available_keys}. "
+            f"Please ensure you have added GOOGLE_SERVICE_ACCOUNT_JSON to your secrets configuration "
+            f"in Streamlit Cloud (Settings > Secrets) or in .streamlit/secrets.toml for local development. "
+            f"The key name is case-sensitive and must be exactly 'GOOGLE_SERVICE_ACCOUNT_JSON'. "
+            f"IMPORTANT: Use triple double quotes (\"\"\") for TOML multiline strings, NOT triple single quotes (''')."
+        )
+        logger.error(error_msg)
+        raise KeyError(error_msg)
     except Exception as e:
         logger.error(f"Failed to load service account info: {e}", exc_info=True)
-    return None
+        return None
 
 
 def check_auth_configuration():
