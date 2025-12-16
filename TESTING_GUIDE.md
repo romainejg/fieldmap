@@ -119,8 +119,6 @@ For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ### Test 6: Error Handling
 
-### Test 6: Error Handling
-
 1. [ ] Sign out if signed in
 2. [ ] Try to access Fieldmap directly via URL
 3. [ ] Verify you're redirected to About page with sign-in UI
