@@ -1159,11 +1159,11 @@ class AboutPage(BasePage):
             # Main headline
             st.markdown('<div class="hero-title">Welcome to Fieldmap.</div>', unsafe_allow_html=True)
             
-            # Concise feature list (3-5 bullets)
+            # Concise feature list (2 sentence)
             st.markdown("""
             <div class="feature-list">
             <ul style="list-style-type: none; padding-left: 0;">
-            <li> A non-profit app to assist biomedical engineers with lab efficiency and documentation. Capture and organize photos, annotate images, and sync automatically to Google Drive.</li>
+            A non-profit app to assist biomedical engineers with lab efficiency and documentation. Capture and organize photos, annotate images, and sync automatically to Google Drive.
             </ul>
             </div>
             """, unsafe_allow_html=True)
