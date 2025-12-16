@@ -46,6 +46,56 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Add client-side debugging script that runs on every page load
+# This helps debug OAuth callback issues
+st.components.v1.html(
+    """
+    <script>
+    (function() {
+        // Log page load and URL details
+        console.log("="+"=".repeat(79));
+        console.log("Fieldmap Page Load");
+        console.log("="+"=".repeat(79));
+        console.log("Timestamp:", new Date().toISOString());
+        console.log("Current URL:", window.location.href);
+        console.log("URL search params:", window.location.search);
+        
+        // Parse and log query parameters
+        const params = new URLSearchParams(window.location.search);
+        if (params.toString()) {
+            console.log("Query parameters found:");
+            params.forEach((value, key) => {
+                if (key === 'code') {
+                    console.log(`  ${key}: ${value.substring(0, 30)}...`);
+                } else if (key === 'state') {
+                    console.log(`  ${key}: ${value.substring(0, 32)}...`);
+                } else {
+                    console.log(`  ${key}: ${value}`);
+                }
+            });
+        } else {
+            console.log("No query parameters present");
+        }
+        
+        // Check sessionStorage for OAuth state
+        try {
+            const storedState = sessionStorage.getItem('fieldmap_oauth_state');
+            if (storedState) {
+                console.log("OAuth state in sessionStorage:", storedState);
+            } else {
+                console.log("No OAuth state in sessionStorage");
+            }
+        } catch(e) {
+            console.error("Error accessing sessionStorage:", e);
+        }
+        
+        console.log("="+"=".repeat(79));
+    })();
+    </script>
+    """,
+    height=0
+)
+
 # Custom CSS for mobile-friendly UI
 st.markdown("""
 <style>
@@ -1239,12 +1289,35 @@ class AboutPage(BasePage):
                     
                     if auth_url:
                         logger.info("Initiating redirect to Google OAuth...")
-                        # Immediately show JS redirect
+                        
+                        # Get oauth_state for client-side logging
+                        oauth_state = st.session_state.get('oauth_state', 'NOT_SET')
+                        
+                        # Immediately show JS redirect with enhanced logging
                         safe_url = json.dumps(auth_url)
+                        safe_state = json.dumps(oauth_state[:16] if oauth_state != 'NOT_SET' else 'NOT_SET')
+                        
                         components.html(
                             f"""
                             <script>
-                                console.log("Redirecting to Google OAuth...");
+                                console.log("="+"=".repeat(79));
+                                console.log("Fieldmap OAuth Flow - Client Side");
+                                console.log("="+"=".repeat(79));
+                                console.log("Timestamp:", new Date().toISOString());
+                                console.log("OAuth state (first 16 chars):", {safe_state});
+                                console.log("Redirect URL:", {safe_url}.substring(0, 80) + "...");
+                                console.log("Initiating redirect to Google...");
+                                console.log("="+"=".repeat(79));
+                                
+                                // Store state in sessionStorage as backup
+                                try {{
+                                    sessionStorage.setItem('fieldmap_oauth_state', {safe_state});
+                                    console.log("✓ Stored state in sessionStorage");
+                                }} catch(e) {{
+                                    console.error("✗ Failed to store in sessionStorage:", e);
+                                }}
+                                
+                                // Redirect
                                 window.top.location.href = {safe_url};
                             </script>
                             """,
