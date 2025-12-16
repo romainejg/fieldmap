@@ -1370,8 +1370,9 @@ class App:
             if hasattr(self.google_auth, 'cookies') and 'oauth_state' in self.google_auth.cookies:
                 del self.google_auth.cookies['oauth_state']
                 self.google_auth.cookies.save()
-        except Exception:
-            pass  # Ignore cookie cleanup errors
+        except (RuntimeError, KeyError, AttributeError):
+            # Ignore cookie cleanup errors during error paths - not critical
+            pass
     
     def render_sidebar(self):
         """Render sidebar with logo and navigation"""
@@ -1454,8 +1455,10 @@ class App:
                 try:
                     cookie_present = 'oauth_state' in self.google_auth.cookies
                     st.text(f"Cookie present: {cookie_present}")
-                except (AttributeError, Exception):
-                    st.text("Cookie present: N/A (cookie manager not ready)")
+                except AttributeError:
+                    st.text("Cookie present: N/A (cookie manager not initialized)")
+                except Exception as e:
+                    st.text(f"Cookie present: N/A (error: {type(e).__name__})")
                 
                 st.info("Please try signing in again.")
                 

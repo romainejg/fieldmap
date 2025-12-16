@@ -43,7 +43,7 @@ class GoogleAuthHelper:
         # For production, set COOKIE_PASSWORD in Streamlit secrets
         try:
             password = st.secrets.get("COOKIE_PASSWORD", "fieldmap-oauth-cookie-secret-key-change-me")
-        except Exception:
+        except (KeyError, AttributeError):
             password = os.environ.get("COOKIE_PASSWORD", "fieldmap-oauth-cookie-secret-key-change-me")
         
         # Create cookie manager if not already in session_state
@@ -314,8 +314,14 @@ class GoogleAuthHelper:
             )
             
             # Store state in BOTH cookie and session_state for redundancy
-            self.cookies['oauth_state'] = state
-            self.cookies.save()
+            try:
+                self.cookies['oauth_state'] = state
+                self.cookies.save()
+            except (RuntimeError, KeyError) as e:
+                # Cookie save failed - log warning but continue with session_state only
+                # This can happen if cookies are blocked or cookie manager not ready
+                st.warning(f"⚠️ Unable to store OAuth state in cookie: {e}. Using session state only.")
+            
             st.session_state.oauth_state = state
             st.session_state.oauth_flow = flow
             
@@ -361,9 +367,13 @@ class GoogleAuthHelper:
             })
             
             # Clean up OAuth state from both cookie and session_state
-            if 'oauth_state' in self.cookies:
-                del self.cookies['oauth_state']
-                self.cookies.save()
+            try:
+                if 'oauth_state' in self.cookies:
+                    del self.cookies['oauth_state']
+                    self.cookies.save()
+            except (RuntimeError, KeyError, AttributeError):
+                # Ignore cookie cleanup errors - not critical
+                pass
             
             if 'oauth_flow' in st.session_state:
                 del st.session_state.oauth_flow
