@@ -192,7 +192,7 @@ def get_service_account_info():
     Raises:
         KeyError: If GOOGLE_SERVICE_ACCOUNT_JSON is missing from secrets
     """
-    available_keys = []  # Track for error message
+    available_keys = []
     try:
         # Get available keys for diagnostic purposes (only when needed)
         available_keys = log_available_secret_keys()
@@ -217,14 +217,19 @@ def get_service_account_info():
             logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON is present but empty")
             return None
     except KeyError:
-        # Key doesn't exist - provide detailed error message using already-retrieved keys
+        # Key doesn't exist - provide detailed error message
+        # Use already-retrieved available_keys if populated, otherwise get them now
+        if not available_keys:
+            available_keys = list(st.secrets.keys()) if hasattr(st, 'secrets') else []
+        
         error_msg = (
-            f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets. "
-            f"Available secret keys: {available_keys}. "
-            f"Please ensure you have added GOOGLE_SERVICE_ACCOUNT_JSON to your secrets configuration "
-            f"in Streamlit Cloud (Settings > Secrets) or in .streamlit/secrets.toml for local development. "
-            f"The key name is case-sensitive and must be exactly 'GOOGLE_SERVICE_ACCOUNT_JSON'. "
-            f"IMPORTANT: Use triple double quotes (\"\"\") for TOML multiline strings, NOT triple single quotes (''')."
+            f"GOOGLE_SERVICE_ACCOUNT_JSON is missing from Streamlit secrets.\n"
+            f"Available secret keys: {available_keys}\n\n"
+            f"Please ensure you have added GOOGLE_SERVICE_ACCOUNT_JSON to your secrets:\n"
+            f"  - Streamlit Cloud: Settings > Secrets\n"
+            f"  - Local development: .streamlit/secrets.toml\n\n"
+            f"IMPORTANT: The key name is case-sensitive and must be exactly 'GOOGLE_SERVICE_ACCOUNT_JSON'.\n"
+            f"Use triple double quotes (\"\"\") for TOML multiline strings, NOT triple single quotes (''')."
         )
         logger.error(error_msg)
         raise KeyError(error_msg)
