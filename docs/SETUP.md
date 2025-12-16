@@ -131,21 +131,18 @@ client_secret = "<YOUR_OAUTH_CLIENT_SECRET>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
 # Google Service Account for Drive Storage
-# IMPORTANT: Use triple double quotes (""") for TOML multiline strings, NOT triple single quotes (''')
-GOOGLE_SERVICE_ACCOUNT_JSON = """
-{
-  "type": "service_account",
-  "project_id": "your-project-id",
-  "private_key_id": "...",
-  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
-  "client_email": "fieldmap-drive-storage@your-project.iam.gserviceaccount.com",
-  "client_id": "...",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
-}
-"""
+# IMPORTANT: Use TOML table format, NOT JSON string
+[google_service_account]
+type = "service_account"
+project_id = "your-project-id"
+private_key_id = "..."
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "fieldmap-drive-storage@your-project.iam.gserviceaccount.com"
+client_id = "..."
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
 ```
 
 **To generate `cookie_secret`:**
@@ -153,10 +150,11 @@ GOOGLE_SERVICE_ACCOUNT_JSON = """
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-**For `GOOGLE_SERVICE_ACCOUNT_JSON`:**
-- Paste the entire contents of the JSON file downloaded in Part 1.4.9
-- **IMPORTANT: Use triple double quotes `"""` around it, NOT triple single quotes `'''`**
-- This ensures proper TOML parsing in Streamlit Cloud
+**For `[google_service_account]`:**
+- Open the JSON file downloaded in Part 1.4.9
+- Copy each field from the JSON into the TOML table format shown above
+- **IMPORTANT: Use TOML table format (shown above), NOT a JSON string**
+- This ensures proper parsing and no need for json.loads in the code
 
 3. Click **Save**
 4. App will restart automatically
@@ -191,13 +189,18 @@ client_id = "<YOUR_OAUTH_CLIENT_ID>.apps.googleusercontent.com"
 client_secret = "<YOUR_OAUTH_CLIENT_SECRET>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-# IMPORTANT: Use triple double quotes (""") for TOML multiline strings
-GOOGLE_SERVICE_ACCOUNT_JSON = """
-{
-  "type": "service_account",
-  ...
-}
-"""
+# Service account as TOML table (NOT JSON string)
+[google_service_account]
+type = "service_account"
+project_id = "your-project-id"
+private_key_id = "..."
+private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+client_email = "fieldmap-drive-storage@your-project.iam.gserviceaccount.com"
+client_id = "..."
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
 ```
 
 **Important:**
@@ -314,7 +317,7 @@ See [docs/SETUP.md](SETUP.md) for complete troubleshooting guide.
 
 #### "Service account not configured"
 
-**Solution:** Ensure `GOOGLE_SERVICE_ACCOUNT_JSON` is set in secrets with valid JSON
+**Solution:** Ensure `[google_service_account]` table is set in secrets with all required fields
 
 Run: `python debug_auth.py` for detailed diagnostics
 
@@ -395,8 +398,11 @@ client_id = "<oauth-client-id>"
 client_secret = "<oauth-client-secret>"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 
-# IMPORTANT: Use triple double quotes ("""), NOT triple single quotes (''')
-GOOGLE_SERVICE_ACCOUNT_JSON = """<service-account-json>"""
+# Service account as TOML table
+[google_service_account]
+type = "service_account"
+project_id = "your-project-id"
+# ... all other fields from service account JSON ...
 ```
 
 **For Local Development:**

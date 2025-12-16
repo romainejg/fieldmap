@@ -148,26 +148,22 @@ def validate_service_account(secrets: Dict) -> List[str]:
     
     issues = []
     
-    if 'GOOGLE_SERVICE_ACCOUNT_JSON' not in secrets:
-        print_error("GOOGLE_SERVICE_ACCOUNT_JSON not found in secrets.toml")
-        issues.append("Service account JSON missing")
+    if 'google_service_account' not in secrets:
+        print_error("[google_service_account] section not found in secrets.toml")
+        issues.append("Service account section missing")
         return issues
     
-    print_success("GOOGLE_SERVICE_ACCOUNT_JSON found")
+    print_success("[google_service_account] section found")
     
-    sa_json = secrets['GOOGLE_SERVICE_ACCOUNT_JSON']
+    sa_data = secrets['google_service_account']
     
-    # Try to parse as JSON
-    try:
-        if isinstance(sa_json, str):
-            sa_data = json.loads(sa_json)
-        else:
-            sa_data = sa_json
-        print_success("Service account JSON is valid")
-    except json.JSONDecodeError as e:
-        print_error(f"Invalid JSON in service account: {e}")
-        issues.append("Invalid JSON in service account")
+    # Validate it's a dict/table
+    if not isinstance(sa_data, dict):
+        print_error(f"Service account should be a TOML table, got: {type(sa_data)}")
+        issues.append("Service account format (should be TOML table, not string)")
         return issues
+    
+    print_success("Service account is in correct TOML table format")
     
     # Validate required fields
     required_fields = [
@@ -183,7 +179,7 @@ def validate_service_account(secrets: Dict) -> List[str]:
     
     for field in required_fields:
         if field not in sa_data:
-            print_error(f"Missing field in service account JSON: {field}")
+            print_error(f"Missing field in service account: {field}")
             issues.append(f"Service account missing: {field}")
         elif not sa_data[field] or (isinstance(sa_data[field], str) and 
                                     (sa_data[field].startswith('<') or 
@@ -270,7 +266,7 @@ def test_service_account_connection(secrets: Dict):
     """Test connection to Google Drive with service account"""
     print_header("Step 6: Testing Service Account Connection to Google Drive")
     
-    if 'GOOGLE_SERVICE_ACCOUNT_JSON' not in secrets:
+    if 'google_service_account' not in secrets:
         print_error("Cannot test - service account not configured")
         return False
     
@@ -279,11 +275,7 @@ def test_service_account_connection(secrets: Dict):
         from googleapiclient.discovery import build
         
         print_info("Attempting to create credentials...")
-        sa_json = secrets['GOOGLE_SERVICE_ACCOUNT_JSON']
-        if isinstance(sa_json, str):
-            sa_data = json.loads(sa_json)
-        else:
-            sa_data = sa_json
+        sa_data = dict(secrets['google_service_account'])
         
         credentials = service_account.Credentials.from_service_account_info(
             sa_data,
@@ -338,7 +330,7 @@ def test_service_account_connection(secrets: Dict):
     except Exception as e:
         print_error(f"Failed to connect to Google Drive: {e}")
         print_info("Common causes:")
-        print_info("  - Service account JSON is invalid or incomplete")
+        print_info("  - Service account credentials are invalid or incomplete")
         print_info("  - Drive API is not enabled in Google Cloud Console")
         print_info("  - Network connectivity issues")
         return False
