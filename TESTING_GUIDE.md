@@ -63,7 +63,7 @@ For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ## Testing Checklist
 
-### Test 1: Authentication Flow
+### Test 1: OAuth Authentication Flow
 
 1. [ ] Open the app (either `https://your-app.streamlit.app` or `http://localhost:8501`)
 2. [ ] Verify you land on the About page

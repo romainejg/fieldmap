@@ -4,7 +4,12 @@ This module provides an abstraction layer for photo persistence in the Fieldmap 
 
 ## Overview
 
-The storage module separates photo data from storage implementation. Fieldmap currently uses Google Drive as the exclusive storage backend.
+The storage module separates photo data from storage implementation, enabling potential future storage backends. Currently, Fieldmap uses Google Drive as the exclusive storage backend.
+
+**Design Philosophy**: While Google Drive is currently the only supported backend, the abstraction layer is maintained for:
+- Future extensibility (e.g., S3, Azure Blob, etc.)
+- Easier testing with mock storage
+- Clear separation of concerns
 
 ## Current Implementation
 
