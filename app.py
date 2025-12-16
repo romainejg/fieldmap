@@ -25,12 +25,6 @@ from storage import LocalFolderStorage, GoogleDriveStorage
 # Configure logger for this module
 logger = logging.getLogger(__name__)
 
-# Session state keys for OAuth flow
-PENDING_AUTH_URL_KEY = "pending_auth_url"
-
-# Constants
-MAX_URL_DISPLAY_LENGTH = 80
-
 # Configure page for mobile optimization
 st.set_page_config(
     page_title="Fieldmap - Lab Photos",
@@ -1172,24 +1166,26 @@ class AboutPage(BasePage):
                 st.button("Try Again", key="retry_oauth", type="primary")
             
             # Check if credentials are configured
-            client_config = self.google_auth._get_credentials_config()
-            redirect_uri = self.google_auth._get_redirect_uri()
+            import google_oauth
+            config = google_oauth.get_oauth_config()
+            redirect_uri = google_oauth.get_redirect_uri()
             
             # Check for missing configuration
-            if not client_config or not redirect_uri:
+            if not config or not redirect_uri:
                 st.markdown("### Setup Required")
-                if not client_config:
-                    st.error("⚠️ GOOGLE_OAUTH_CLIENT_JSON not configured")
+                if not config:
+                    st.error("⚠️ GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not configured")
                 if not redirect_uri:
                     st.error("⚠️ APP_BASE_URL not configured. Please set to https://fieldmap.streamlit.app")
                 
                 with st.expander("Setup Instructions"):
                     st.markdown("""
                     **Required secrets:**
-                    - `GOOGLE_OAUTH_CLIENT_JSON` - OAuth client credentials (Web application type)
+                    - `GOOGLE_CLIENT_ID` - OAuth client ID
+                    - `GOOGLE_CLIENT_SECRET` - OAuth client secret
                     - `APP_BASE_URL` - App base URL (e.g., `https://fieldmap.streamlit.app` - no trailing slash)
                     
-                    **In Google Cloud Console, add this exact redirect URI:**
+                    **In Google Cloud Console, create Web Application OAuth client and add this exact redirect URI:**
                     - For production: `https://fieldmap.streamlit.app`
                     - For local dev: `http://localhost:8501`
                     
@@ -1217,11 +1213,8 @@ class AboutPage(BasePage):
                 st.markdown("Sign in with Google to access Fieldmap")
                 
                 if st.button("Sign in with Google", key="google_signin_about", type="primary", use_container_width=True):
-                    auth_url = self.google_auth.get_auth_url()
+                    auth_url = google_oauth.build_auth_url()
                     if auth_url:
-                        # Store auth_url
-                        st.session_state[PENDING_AUTH_URL_KEY] = auth_url
-                        
                         # Immediately show JS redirect
                         safe_url = json.dumps(auth_url)
                         components.html(
@@ -1250,7 +1243,7 @@ class AboutPage(BasePage):
                 # Debug panel for OAuth troubleshooting
                 with st.expander("🔧 OAuth Debug Info", expanded=False):
                     st.markdown("**APP_BASE_URL Configuration:**")
-                    app_base_url = self.google_auth._get_app_base_url()
+                    app_base_url = google_oauth.get_app_base_url()
                     if app_base_url:
                         st.code(app_base_url)
                     else:
@@ -1263,25 +1256,12 @@ class AboutPage(BasePage):
                     else:
                         st.error("❌ Cannot compute redirect URI (APP_BASE_URL missing)")
                     
-                    st.markdown("**Generated Auth URL:**")
-                    pending_auth_url = st.session_state.get(PENDING_AUTH_URL_KEY, "(not generated yet)")
-                    if pending_auth_url and pending_auth_url != "(not generated yet)":
-                        # Truncate for security (don't show full URL with state param)
-                        truncated = (pending_auth_url[:MAX_URL_DISPLAY_LENGTH] + "...") if len(pending_auth_url) > MAX_URL_DISPLAY_LENGTH else pending_auth_url
-                        st.code(truncated)
+                    st.markdown("**OAuth Client Configuration:**")
+                    if config:
+                        st.success("✅ Client ID and Secret configured")
+                        st.code(f"Client ID: {config['client_id'][:20]}...")
                     else:
-                        st.text(pending_auth_url)
-                    
-                    st.markdown("**OAuth Client Type:**")
-                    if client_config:
-                        if "web" in client_config:
-                            st.success("✅ Web application (correct)")
-                        elif "installed" in client_config:
-                            st.error("❌ Desktop/Installed application (incorrect - use Web application)")
-                        else:
-                            st.warning("⚠️ Unknown client type")
-                    else:
-                        st.text("(not loaded)")
+                        st.error("❌ OAuth client not configured")
                     
                     st.markdown("**Current Query Parameters:**")
                     if query_params:
@@ -1292,22 +1272,14 @@ class AboutPage(BasePage):
                     
                     st.markdown("**OAuth State in Session:**")
                     oauth_state = st.session_state.get('oauth_state', '(not set)')
-                    st.text(oauth_state)
+                    if oauth_state != '(not set)':
+                        st.text(f"{oauth_state[:16]}...")
+                    else:
+                        st.text(oauth_state)
                     
-                    st.markdown("**OAuth State in Cookie:**")
-                    try:
-                        cookie_state = self.google_auth.cookies.get('oauth_state', '(not set)')
-                        st.text(cookie_state)
-                    except Exception as e:
-                        st.text(f"(error reading cookie: {e})")
-                    
-                    st.markdown("**Auth In Progress:**")
-                    auth_in_progress = st.session_state.get('auth_in_progress', False)
-                    st.text(str(auth_in_progress))
-                    
-                    st.markdown("**Last Auth Error:**")
-                    last_error = st.session_state.get('last_oauth_error', '(none)')
-                    st.text(last_error)
+                    st.markdown("**Token Present:**")
+                    token_present = "google_token" in st.session_state
+                    st.text(str(token_present))
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -1351,28 +1323,6 @@ class App:
             'Gallery': GalleryPage(self.session_store),
             'About': AboutPage(self.session_store, self.google_auth)
         }
-    
-    def _cleanup_oauth_state(self):
-        """Clean up OAuth-related session state keys and cookies."""
-        # Note: oauth_state is cleaned up by handle_oauth_callback on success,
-        # but we need to clean it up on error paths
-        if 'oauth_state' in st.session_state:
-            del st.session_state['oauth_state']
-        if 'auth_in_progress' in st.session_state:
-            del st.session_state['auth_in_progress']
-        if 'pending_auth_url' in st.session_state:
-            del st.session_state['pending_auth_url']
-        if PENDING_AUTH_URL_KEY in st.session_state:
-            del st.session_state[PENDING_AUTH_URL_KEY]
-        
-        # Clear OAuth state from cookie
-        try:
-            if hasattr(self.google_auth, 'cookies') and 'oauth_state' in self.google_auth.cookies:
-                del self.google_auth.cookies['oauth_state']
-                self.google_auth.cookies.save()
-        except (RuntimeError, KeyError, AttributeError):
-            # Ignore cookie cleanup errors during error paths - not critical
-            pass
     
     def render_sidebar(self):
         """Render sidebar with logo and navigation"""
@@ -1433,73 +1383,24 @@ class App:
         query_params = st.query_params
         
         if 'code' in query_params and 'state' in query_params:
-            # Get expected state from cookie (preferred) or session_state (fallback)
-            expected_state, state_source = self.google_auth._get_expected_state()
-            received_state = query_params['state']
+            # Use new google_oauth module for callback handling
+            import google_oauth
             
-            if not expected_state or expected_state != received_state:
-                # State mismatch - show debug info
-                st.error("❌ Invalid OAuth state. Possible CSRF attack detected.")
-                
-                # Debug information
-                st.warning("**Debug Information:**")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.text("Returned state (first 8 chars):")
-                    st.code(received_state[:8] if received_state else "(none)")
-                with col2:
-                    st.text("Expected state (first 8 chars):")
-                    st.code(expected_state[:8] if expected_state else "(none)")
-                
-                st.text(f"State source: {state_source}")
-                try:
-                    # Check if cookie manager exists and is accessible
-                    if not hasattr(self.google_auth, 'cookies'):
-                        st.text("Cookie present: N/A (cookie manager not initialized)")
-                    else:
-                        cookie_present = 'oauth_state' in self.google_auth.cookies
-                        st.text(f"Cookie present: {cookie_present}")
-                except RuntimeError as e:
-                    st.text(f"Cookie present: N/A (runtime error: {str(e)})")
-                except Exception as e:
-                    st.text(f"Cookie present: N/A (error: {type(e).__name__})")
-                
-                st.info("Please try signing in again.")
-                
-                # Clear state and cookies
-                st.query_params.clear()
-                self._cleanup_oauth_state()
-                st.stop()
-            else:
-                # State is valid, proceed with token exchange
-                redirect_uri = self.google_auth._get_redirect_uri()
-                
-                # Build authorization response URL
-                params = {'code': query_params['code'], 'state': query_params['state']}
-                auth_response_url = f"{redirect_uri}?{urlencode(params)}"
-                
-                with st.spinner("Completing sign-in..."):
-                    try:
-                        if self.google_auth.handle_oauth_callback(auth_response_url):
-                            st.session_state.google_authed = True
-                            st.session_state.google_user_email = self.google_auth.get_user_email()
-                            # Clear query params (oauth_state already cleaned by handle_oauth_callback)
-                            st.query_params.clear()
-                            # Clean up PENDING_AUTH_URL_KEY
-                            if PENDING_AUTH_URL_KEY in st.session_state:
-                                del st.session_state[PENDING_AUTH_URL_KEY]
-                            st.success("✅ Successfully signed in!")
-                            st.rerun()
-                        else:
-                            st.error("❌ Authentication failed. Please try again.")
-                            st.query_params.clear()
-                            self._cleanup_oauth_state()
-                    except Exception as e:
-                        error_msg = str(e)
-                        st.error(f"❌ Authentication error: {error_msg}")
-                        st.query_params.clear()
-                        self._cleanup_oauth_state()
-                st.stop()
+            with st.spinner("Completing sign-in..."):
+                if google_oauth.handle_callback():
+                    st.session_state.google_authed = True
+                    st.session_state.google_user_email = google_oauth.get_user_email()
+                    # Clear query params
+                    st.query_params.clear()
+                    st.success("✅ Successfully signed in!")
+                    st.rerun()
+                else:
+                    # Error message already shown by handle_callback()
+                    st.query_params.clear()
+                    # Clean up any OAuth state
+                    if "oauth_state" in st.session_state:
+                        del st.session_state["oauth_state"]
+            st.stop()
         
         # Check authentication status
         is_authenticated = self.google_auth.is_authenticated()
