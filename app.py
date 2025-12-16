@@ -1344,6 +1344,15 @@ class App:
             'About': AboutPage(self.session_store, self.google_auth)
         }
     
+    def _cleanup_oauth_state(self):
+        """Clean up OAuth-related session state keys."""
+        # Note: oauth_state is cleaned up by handle_oauth_callback on success,
+        # but we need to clean it up on error paths
+        if 'oauth_state' in st.session_state:
+            del st.session_state['oauth_state']
+        if PENDING_AUTH_URL_KEY in st.session_state:
+            del st.session_state[PENDING_AUTH_URL_KEY]
+    
     def render_sidebar(self):
         """Render sidebar with logo and navigation"""
         with st.sidebar:
@@ -1410,11 +1419,7 @@ class App:
             if not expected_state or expected_state != received_state:
                 st.error("❌ Invalid OAuth state. Possible CSRF attack detected. Please try again.")
                 st.query_params.clear()
-                # Clear OAuth state
-                if 'oauth_state' in st.session_state:
-                    del st.session_state['oauth_state']
-                if PENDING_AUTH_URL_KEY in st.session_state:
-                    del st.session_state[PENDING_AUTH_URL_KEY]
+                self._cleanup_oauth_state()
                 st.stop()
             else:
                 # State is valid, proceed with token exchange
@@ -1429,10 +1434,9 @@ class App:
                         if self.google_auth.handle_oauth_callback(auth_response_url):
                             st.session_state.google_authed = True
                             st.session_state.google_user_email = self.google_auth.get_user_email()
-                            # Clear query params and OAuth state
+                            # Clear query params (oauth_state already cleaned by handle_oauth_callback)
                             st.query_params.clear()
-                            if 'oauth_state' in st.session_state:
-                                del st.session_state['oauth_state']
+                            # Clean up PENDING_AUTH_URL_KEY
                             if PENDING_AUTH_URL_KEY in st.session_state:
                                 del st.session_state[PENDING_AUTH_URL_KEY]
                             st.success("✅ Successfully signed in!")
@@ -1440,18 +1444,12 @@ class App:
                         else:
                             st.error("❌ Authentication failed. Please try again.")
                             st.query_params.clear()
-                            if 'oauth_state' in st.session_state:
-                                del st.session_state['oauth_state']
-                            if PENDING_AUTH_URL_KEY in st.session_state:
-                                del st.session_state[PENDING_AUTH_URL_KEY]
+                            self._cleanup_oauth_state()
                     except Exception as e:
                         error_msg = str(e)
                         st.error(f"❌ Authentication error: {error_msg}")
                         st.query_params.clear()
-                        if 'oauth_state' in st.session_state:
-                            del st.session_state['oauth_state']
-                        if PENDING_AUTH_URL_KEY in st.session_state:
-                            del st.session_state[PENDING_AUTH_URL_KEY]
+                        self._cleanup_oauth_state()
                 st.stop()
         
         # Check authentication status
