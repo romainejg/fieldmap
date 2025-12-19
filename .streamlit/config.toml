@@ -11,6 +11,8 @@ headless = true
 enableCORS = true
 enableXsrfProtection = true
 maxUploadSize = 200
+# Increase message size limit to allow larger outputs (2000 KB = ~2MB)
+maxMessageSize = 2000
 
 [browser]
 gatherUsageStats = false

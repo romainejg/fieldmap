@@ -148,6 +148,17 @@ st.markdown("""
     .stRadio > div > label > div {
         text-align: left;
     }
+    
+    /* Mobile sidebar fix - ensure it fully collapses when closed */
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            transform: translateX(-100%) !important;
+            margin-left: 0 !important;
+        }
+        section[data-testid="stSidebar"] {
+            transition: transform 0.3s ease-in-out !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1036,6 +1047,7 @@ class AboutPage(BasePage):
                 box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                 margin-top: 2rem;
             }
+            /* Mobile responsive design - stack content vertically with image below login */
             @media (max-width: 768px) {
                 .hero-title {
                     font-size: 2rem;
@@ -1045,6 +1057,15 @@ class AboutPage(BasePage):
                 }
                 .hero-subtitle {
                     font-size: 1rem;
+                }
+                .hero-image {
+                    margin-top: 1rem;
+                    margin-bottom: 2rem;
+                }
+                /* Reverse column order on mobile so image appears after login */
+                div[data-testid="column"] {
+                    display: flex;
+                    flex-direction: column-reverse;
                 }
             }
         </style>
