@@ -1155,8 +1155,8 @@ class AboutPage(BasePage):
                     st.markdown('<div class="hero-image-mobile">', unsafe_allow_html=True)
                     st.image(hero_image, use_column_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
-            except Exception as e:
-                pass  # Mobile image is optional
+            except (FileNotFoundError, OSError) as e:
+                logger.debug(f"Mobile hero image not available: {e}")  # Mobile image is optional
         
         with col_right:
             # Hero image
