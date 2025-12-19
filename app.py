@@ -1047,7 +1047,10 @@ class AboutPage(BasePage):
                 box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                 margin-top: 2rem;
             }
-            /* Mobile responsive design - stack content vertically with image below login */
+            .hero-image-mobile {
+                display: none;
+            }
+            /* Mobile responsive design - stack content vertically */
             @media (max-width: 768px) {
                 .hero-title {
                     font-size: 2rem;
@@ -1059,13 +1062,14 @@ class AboutPage(BasePage):
                     font-size: 1rem;
                 }
                 .hero-image {
-                    margin-top: 1rem;
-                    margin-bottom: 2rem;
+                    display: none; /* Hide desktop image on mobile */
                 }
-                /* Reverse column order on mobile so image appears after login */
-                div[data-testid="column"] {
-                    display: flex;
-                    flex-direction: column-reverse;
+                .hero-image-mobile {
+                    display: block; /* Show mobile image on mobile */
+                    border-radius: 12px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    margin-top: 2rem;
+                    margin-bottom: 2rem;
                 }
             }
         </style>
@@ -1142,6 +1146,17 @@ class AboutPage(BasePage):
                         logger.error(f"OAuth initialization failed: {e}", exc_info=True)
             
             st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Hero image for mobile - appears after login on mobile
+            try:
+                hero_path = Path(__file__).parent / "assets" / "biomedical.jpg"
+                if hero_path.exists():
+                    hero_image = Image.open(hero_path)
+                    st.markdown('<div class="hero-image-mobile">', unsafe_allow_html=True)
+                    st.image(hero_image, use_column_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+            except Exception as e:
+                pass  # Mobile image is optional
         
         with col_right:
             # Hero image
